@@ -3,14 +3,14 @@ import path from "node:path";
 import { noFramework } from "@/parser/adapter.mts";
 import { readParseResult, type ParseResult } from "@/parser/types.mts";
 
-// elder-pickle-blog at c72655308476a5a0c1f7ab67c62c855ec4373588.
+// TanStack Query at dee1679bf42cad475a5c5810524475b2ffd6903d.
 // Scaffolding: the map is built from this file, with no account and no network.
 // It goes away once analyses are stored.
 //
 // Parsed with the no-framework adapter. It names no framework and recovers no
 // routes, so the pane shows that id and a zero rather than a guess from paths.
 export const previewRepository = {
-  name: "elder-pickle-blog",
+  name: "TanStack Query",
   framework: noFramework.id,
   routeCount: 0,
 } as const;
@@ -21,7 +21,7 @@ export const previewRepository = {
 const previewParse: ParseResult = readParseResult(
   JSON.parse(
     fs.readFileSync(
-      path.join(process.cwd(), "data", "elder-pickle-blog.json"),
+      path.join(process.cwd(), "data", "tanstack-query.json"),
       "utf8",
     ),
   ) as unknown,

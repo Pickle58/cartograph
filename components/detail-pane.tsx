@@ -502,17 +502,31 @@ function PathButton({
         wrap ? "py-2" : "h-[22px]"
       } ${highlighted ? "map-highlight" : ""}`}
     >
-      <span
-        className={`min-w-0 flex-1 font-mono text-[12px] ${wrap ? "break-all" : "truncate"}`}
-      >
-        {path}
-      </span>
+      {wrap ? (
+        <span className="min-w-0 flex-1 font-mono text-[12px] break-all">{path}</span>
+      ) : (
+        <PathLabel path={path} />
+      )}
       {count !== undefined ? (
         <span className="shrink-0 font-mono text-[12px] text-muted tabular-nums">
           {count}
         </span>
       ) : null}
     </button>
+  );
+}
+
+function PathLabel({ path }: { path: string }) {
+  const slash = path.lastIndexOf("/");
+  const directory = slash === -1 ? "" : path.slice(0, slash + 1);
+  const name = slash === -1 ? path : path.slice(slash + 1);
+  return (
+    <span className="flex min-w-0 flex-1 font-mono text-[12px]">
+      {directory.length > 0 ? (
+        <span className="min-w-0 truncate text-muted">{directory}</span>
+      ) : null}
+      <span className="max-w-full shrink-0 truncate">{name}</span>
+    </span>
   );
 }
 

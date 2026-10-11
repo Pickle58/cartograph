@@ -6,7 +6,8 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/preview",
+  // Checked-in parse, so the map can be built without an account.
+  "/preview(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

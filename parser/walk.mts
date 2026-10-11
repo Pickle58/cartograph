@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { DirectoryExclusion } from "./adapter.mts";
+
+import type { FrameworkAdapter } from "./adapter.mts";
+import { folderOf, toRepoPath } from "./paths.mts";
 import type { ExcludedPath, SkippedFile } from "./types.mts";
 
 const SOURCE_EXTENSIONS = new Set([
@@ -8,103 +10,120 @@ const SOURCE_EXTENSIONS = new Set([
   ".tsx",
   ".js",
   ".jsx",
-  ".mjs",
-  ".cjs",
   ".mts",
   ".cts",
+  ".mjs",
+  ".cjs",
 ]);
 
-// These are not modules of the repository. The adapter does not know about
-// them; every walk skips them and says so.
-const STRUCTURAL_EXCLUSIONS: readonly DirectoryExclusion[] = [
-  { name: "node_modules", reason: "dependency directory" },
-  { name: ".git", reason: "version control directory" },
+// These are not a framework's layout. Installed packages and the version
+// control directory are never the repository's own modules.
+const STRUCTURAL_EXCLUSIONS: readonly { name: string; reason: string }[] = [
+  { name: "node_modules", reason: "installed dependencies" },
+  { name: ".git", reason: "version control data" },
 ];
 
-export type WalkedRepository = {
-  parsed: string[];
+export const NOT_SOURCE = "not a TypeScript or JavaScript source file";
+
+export type WalkedSource = {
+  absolutePath: string;
+  path: string;
+  folder: string;
+};
+
+export type Walk = {
+  source: WalkedSource[];
   skipped: SkippedFile[];
   excluded: ExcludedPath[];
 };
 
-export function walkRepository(
-  root: string,
-  exclusions: readonly DirectoryExclusion[],
-): WalkedRepository {
-  const parsed: string[] = [];
-  const skipped: SkippedFile[] = [];
-  const excluded: ExcludedPath[] = [];
-  const rules = [...STRUCTURAL_EXCLUSIONS, ...exclusions];
+export function walkRepository(root: string, adapter: FrameworkAdapter): Walk {
+  const exclusions = new Map<string, string>();
+  for (const entry of STRUCTURAL_EXCLUSIONS) {
+    exclusions.set(entry.name, entry.reason);
+  }
+  for (const entry of adapter.exclusions()) {
+    if (!exclusions.has(entry.name)) exclusions.set(entry.name, entry.reason);
+  }
 
-  visit(root, root, rules, parsed, skipped, excluded);
-
-  parsed.sort();
-  skipped.sort((left, right) => comparePath(left.path, right.path));
-  excluded.sort((left, right) => comparePath(left.path, right.path));
-  return { parsed, skipped, excluded };
+  const walk: Walk = { source: [], skipped: [], excluded: [] };
+  visit(root, root, exclusions, walk);
+  return walk;
 }
 
 function visit(
-  root: string,
   directory: string,
-  rules: readonly DirectoryExclusion[],
-  parsed: string[],
-  skipped: SkippedFile[],
-  excluded: ExcludedPath[],
+  root: string,
+  exclusions: ReadonlyMap<string, string>,
+  walk: Walk,
 ): void {
+  // A directory we can't read fails the whole parse. Skipping it would make
+  // the file list look complete when it isn't.
   const entries = fs.readdirSync(directory, { withFileTypes: true });
-  entries.sort((left, right) => comparePath(left.name, right.name));
-
   for (const entry of entries) {
-    if (entry.isSymbolicLink()) continue;
-    const absolute = path.join(directory, entry.name);
-    const relative = repoPath(root, absolute);
-
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) {
+      // Following a link could leave the repository or count the same file
+      // twice. Record it and stop.
+      walk.excluded.push({
+        path: toRepoPath(root, absolutePath),
+        reason: "symbolic link",
+      });
+      continue;
+    }
     if (entry.isDirectory()) {
-      const rule = rules.find((item) => item.name === entry.name);
-      if (rule) {
-        excluded.push({ path: relative, reason: rule.reason });
+      const reason = directoryReason(entry.name, exclusions);
+      if (reason !== undefined) {
+        walk.excluded.push({
+          path: toRepoPath(root, absolutePath),
+          reason,
+        });
         continue;
       }
-      visit(root, absolute, rules, parsed, skipped, excluded);
+      visit(absolutePath, root, exclusions, walk);
       continue;
     }
-
-    if (!entry.isFile()) continue;
-    if (isSourceFile(entry.name)) {
-      parsed.push(relative);
+    if (!entry.isFile()) {
+      walk.skipped.push({
+        path: toRepoPath(root, absolutePath),
+        folder: folderOf(toRepoPath(root, absolutePath)),
+        reason: "not a file",
+      });
       continue;
     }
-    skipped.push({
-      path: relative,
-      folder: folderOf(relative),
-      reason: skipReason(entry.name),
+    const repoPath = toRepoPath(root, absolutePath);
+    if (!isSource(entry.name)) {
+      walk.skipped.push({
+        path: repoPath,
+        folder: folderOf(repoPath),
+        reason: NOT_SOURCE,
+      });
+      continue;
+    }
+    walk.source.push({
+      absolutePath,
+      path: repoPath,
+      folder: folderOf(repoPath),
     });
   }
 }
 
-function isSourceFile(name: string): boolean {
-  const extension = path.extname(name);
-  return SOURCE_EXTENSIONS.has(extension);
+function directoryReason(
+  name: string,
+  exclusions: ReadonlyMap<string, string>,
+): string | undefined {
+  const named = exclusions.get(name);
+  if (named !== undefined) return named;
+  // A leading dot is tool metadata or build output (.git is already named
+  // above). Entering it would turn generated files into nodes.
+  if (name.startsWith(".")) return "hidden directory";
+  return undefined;
 }
 
-function skipReason(name: string): string {
-  const extension = path.extname(name);
-  if (extension.length === 0) return "not TypeScript or JavaScript (no extension)";
-  return `not TypeScript or JavaScript (${extension})`;
+export function isSourceExtension(extension: string): boolean {
+  return SOURCE_EXTENSIONS.has(extension.toLowerCase());
 }
 
-export function folderOf(filePath: string): string {
-  const folder = path.posix.dirname(filePath);
-  return folder === "" ? "." : folder;
-}
-
-function repoPath(root: string, absolute: string): string {
-  return path.relative(root, absolute).split(path.sep).join("/");
-}
-
-function comparePath(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
+function isSource(name: string): boolean {
+  return isSourceExtension(path.extname(name));
 }
