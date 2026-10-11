@@ -45,6 +45,7 @@ export type SceneNode = {
   directory: string;
   label: string;
   fileCount: number;
+  matchedCount: number | null;
   fanIn: number;
   fanOut: number;
   open: boolean;
@@ -87,6 +88,7 @@ export function buildScene(
   links: readonly MapLink[],
   openDirectories: readonly string[],
   selection: MapSelection | null,
+  activeCategory: FileCategory | null = null,
 ): Scene {
   const fold = foldRepository(files);
   const home = new Map<string, string>();
@@ -164,11 +166,18 @@ export function buildScene(
     }
     const nodeSelected =
       selection?.kind === "node" && selection.directory === node.directory;
-    const nodeDimmed = selection !== null && !focus.directories.has(node.directory);
+    const matchedCount =
+      activeCategory === null
+        ? null
+        : node.files.filter((path) => categoryOf(path) === activeCategory).length;
+    const nodeDimmed =
+      (selection !== null && !focus.directories.has(node.directory)) ||
+      matchedCount === 0;
     return {
       directory: node.directory,
       label: node.label,
       fileCount: node.fileCount,
+      matchedCount,
       fanIn: node.fanIn,
       fanOut: node.fanOut,
       open: node.open,
@@ -185,6 +194,7 @@ export function buildScene(
         selected: selection?.kind === "file" && selection.path === path,
         dimmed:
           nodeDimmed ||
+          (activeCategory !== null && categoryOf(path) !== activeCategory) ||
           (selection !== null && !nodeSelected && !focus.files.has(path)),
       })),
     };
@@ -196,7 +206,10 @@ export function buildScene(
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    tone: toneOf(edge, selection),
+    tone:
+      activeCategory !== null && !edgeTouchesCategory(edge, activeCategory)
+        ? "dimmed"
+        : toneOf(edge, selection),
   }));
 
   return { nodes, edges };
@@ -371,6 +384,16 @@ function toneOf(edge: VisualEdge, selection: MapSelection | null): EdgeTone {
       throw new Error(`Unhandled selection: ${String(unhandled)}`);
     }
   }
+}
+
+function edgeTouchesCategory(
+  edge: VisualEdge,
+  category: FileCategory,
+): boolean {
+  return edge.pairs.some(
+    (pair) =>
+      categoryOf(pair.source) === category || categoryOf(pair.target) === category,
+  );
 }
 
 function foldedWidth(label: string): number {

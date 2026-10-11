@@ -5,8 +5,9 @@ import { DetailPane, type DetailTab } from "@/components/detail-pane";
 import { DependencyMap } from "@/components/dependency-map";
 import { KindSwatch } from "@/components/kind-swatch";
 import { MapActionsProvider } from "@/components/map-actions";
-import type { CategoryCount } from "@/lib/categories";
+import type { CategoryCount, FileCategory } from "@/lib/categories";
 import { repositoryDetail } from "@/lib/detail";
+import { graphInsights } from "@/lib/graph-analysis";
 import { sameHover, type HoverTarget } from "@/lib/hover";
 import type { MapFile, MapLink, MapSelection } from "@/lib/map-scene";
 
@@ -28,7 +29,9 @@ export function MapShell({
   links: readonly MapLink[];
 }) {
   const detail = useMemo(() => repositoryDetail(files, links), [files, links]);
+  const insights = useMemo(() => graphInsights(files, links), [files, links]);
   const [open, setOpen] = useState<readonly string[]>([]);
+  const [activeCategory, setActiveCategory] = useState<FileCategory | null>(null);
   const [selection, setSelection] = useState<MapSelection | null>(null);
   const [hover, setHoverState] = useState<HoverTarget | null>(null);
   // Remembered across selections, so comparing explanations does not reset the tab.
@@ -102,14 +105,30 @@ export function MapShell({
           </div>
           <ul className="m-0 list-none overflow-auto p-0">
             {categories.map((category) => (
-              <li key={category.id} className="flex items-center gap-2 px-3 py-1.5">
-                <KindSwatch category={category.id} />
-                <span className="min-w-0 flex-1 truncate text-[12px]">
-                  {category.label}
-                </span>
-                <span className="font-mono text-[12px] text-muted tabular-nums">
-                  {category.count}
-                </span>
+              <li key={category.id}>
+                <button
+                  type="button"
+                  aria-pressed={activeCategory === category.id}
+                  onClick={() => {
+                    setSelection(null);
+                    setActiveCategory((current) =>
+                      current === category.id ? null : category.id,
+                    );
+                  }}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+                    activeCategory === category.id
+                      ? "bg-surface-sunken text-accent"
+                      : ""
+                  }`}
+                >
+                  <KindSwatch category={category.id} />
+                  <span className="min-w-0 flex-1 truncate text-[12px]">
+                    {category.label}
+                  </span>
+                  <span className="font-mono text-[12px] text-muted tabular-nums">
+                    {category.count}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -120,6 +139,7 @@ export function MapShell({
             links={links}
             open={open}
             selection={selection}
+            activeCategory={activeCategory}
             fitAfterOpenRef={fitAfterOpenRef}
           />
         </div>
@@ -129,6 +149,8 @@ export function MapShell({
           importCount={importCount}
           routeCount={routeCount}
           detail={detail}
+          links={links}
+          insights={insights}
           selection={selection}
           tab={tab}
           onTab={setTab}

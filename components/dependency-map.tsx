@@ -21,6 +21,7 @@ import {
   type MapSelection,
   type SceneNode,
 } from "@/lib/map-scene";
+import type { FileCategory } from "@/lib/categories";
 import "@xyflow/react/dist/style.css";
 
 const nodeTypes = { module: ModuleNode };
@@ -30,18 +31,20 @@ export function DependencyMap({
   links,
   open,
   selection,
+  activeCategory,
   fitAfterOpenRef,
 }: {
   files: readonly MapFile[];
   links: readonly MapLink[];
   open: readonly string[];
   selection: MapSelection | null;
+  activeCategory: FileCategory | null;
   fitAfterOpenRef: { current: boolean };
 }) {
   const { clearSelection } = useMapActions();
   const scene = useMemo(
-    () => buildScene(files, links, open, selection),
-    [files, links, open, selection],
+    () => buildScene(files, links, open, selection, activeCategory),
+    [files, links, open, selection, activeCategory],
   );
 
   const nodes = useMemo<ModuleFlowNode[]>(

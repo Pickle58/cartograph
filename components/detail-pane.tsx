@@ -1,12 +1,18 @@
 "use client";
 
-import type { MouseEvent, ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { KindSwatch } from "@/components/kind-swatch";
 import { useMapActions } from "@/components/map-actions";
 import { categoryLabel, type FileCategory } from "@/lib/categories";
 import type { FileDetail, RepositoryDetail } from "@/lib/detail";
+import {
+  INSIGHT_SENTENCES,
+  walkGraph,
+  type Insight,
+  type WalkDirection,
+} from "@/lib/graph-analysis";
 import { filePathFrom, pathIsHighlighted, type HoverTarget } from "@/lib/hover";
-import type { MapSelection } from "@/lib/map-scene";
+import type { MapLink, MapSelection } from "@/lib/map-scene";
 
 export type DetailTab = "structure" | "explanation";
 
@@ -16,6 +22,8 @@ export function DetailPane({
   importCount,
   routeCount,
   detail,
+  links,
+  insights,
   selection,
   tab,
   onTab,
@@ -25,11 +33,18 @@ export function DetailPane({
   importCount: number;
   routeCount: number;
   detail: RepositoryDetail;
+  links: readonly MapLink[];
+  insights: readonly Insight[];
   selection: MapSelection | null;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
 }) {
   const { setHover } = useMapActions();
+  const [walk, setWalk] = useState<{
+    path: string;
+    direction: WalkDirection;
+    paths: readonly string[];
+  } | null>(null);
   return (
     <aside
       aria-label="Details"
@@ -43,9 +58,15 @@ export function DetailPane({
         importCount={importCount}
         routeCount={routeCount}
         detail={detail}
+        links={links}
+        insights={insights}
         selection={selection}
         tab={tab}
         onTab={onTab}
+        walk={walk}
+        onWalk={(path, direction) =>
+          setWalk({ path, direction, paths: walkGraph(path, links, direction) })
+        }
       />
     </aside>
   );
@@ -57,18 +78,29 @@ function PaneBody({
   importCount,
   routeCount,
   detail,
+  insights,
   selection,
   tab,
   onTab,
+  walk,
+  onWalk,
 }: {
   name: string;
   framework: string;
   importCount: number;
   routeCount: number;
   detail: RepositoryDetail;
+  links: readonly MapLink[];
+  insights: readonly Insight[];
   selection: MapSelection | null;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
+  walk: {
+    path: string;
+    direction: WalkDirection;
+    paths: readonly string[];
+  } | null;
+  onWalk: (path: string, direction: WalkDirection) => void;
 }) {
   if (selection === null) {
     return (
@@ -78,6 +110,7 @@ function PaneBody({
         importCount={importCount}
         routeCount={routeCount}
         detail={detail}
+        insights={insights}
       />
     );
   }
@@ -88,6 +121,8 @@ function PaneBody({
           file={fileDetail(detail, selection.path)}
           tab={tab}
           onTab={onTab}
+          walk={walk?.path === selection.path ? walk : null}
+          onWalk={onWalk}
         />
       );
     case "node":
@@ -112,12 +147,14 @@ function Summary({
   importCount,
   routeCount,
   detail,
+  insights,
 }: {
   name: string;
   framework: string;
   importCount: number;
   routeCount: number;
   detail: RepositoryDetail;
+  insights: readonly Insight[];
 }) {
   return (
     <>
@@ -135,6 +172,7 @@ function Summary({
         note="Nothing imports these."
         entries={detail.unimported.map((path) => ({ path }))}
       />
+      <InsightsPanel insights={insights} />
     </>
   );
 }
@@ -143,10 +181,17 @@ function FilePane({
   file,
   tab,
   onTab,
+  walk,
+  onWalk,
 }: {
   file: FileDetail;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
+  walk: {
+    direction: WalkDirection;
+    paths: readonly string[];
+  } | null;
+  onWalk: (path: string, direction: WalkDirection) => void;
 }) {
   return (
     <>
@@ -154,7 +199,7 @@ function FilePane({
         <PathButton path={file.path} wrap />
       </div>
       <TabBar tab={tab} onTab={onTab} />
-      <TabBody tab={tab}>{fileTab(tab, file)}</TabBody>
+      <TabBody tab={tab}>{fileTab(tab, file, walk, onWalk)}</TabBody>
     </>
   );
 }
@@ -242,7 +287,12 @@ function TabBody({ tab, children }: { tab: DetailTab; children: ReactNode }) {
   );
 }
 
-function fileTab(tab: DetailTab, file: FileDetail): ReactNode {
+function fileTab(
+  tab: DetailTab,
+  file: FileDetail,
+  walk: { direction: WalkDirection; paths: readonly string[] } | null,
+  onWalk: (path: string, direction: WalkDirection) => void,
+): ReactNode {
   switch (tab) {
     case "structure":
       return (
@@ -256,6 +306,7 @@ function fileTab(tab: DetailTab, file: FileDetail): ReactNode {
             title="Depended on"
             entries={file.dependedOn.map((path) => ({ path }))}
           />
+          <GraphWalk file={file} walk={walk} onWalk={onWalk} />
         </div>
       );
     case "explanation":
@@ -265,6 +316,95 @@ function fileTab(tab: DetailTab, file: FileDetail): ReactNode {
       throw new Error(`Unhandled detail tab: ${String(unhandled)}`);
     }
   }
+}
+
+function GraphWalk({
+  file,
+  walk,
+  onWalk,
+}: {
+  file: FileDetail;
+  walk: { direction: WalkDirection; paths: readonly string[] } | null;
+  onWalk: (path: string, direction: WalkDirection) => void;
+}) {
+  const title =
+    walk?.direction === "dependents" ? "Blast radius" : "Dependency chain";
+  return (
+    <section className="shrink-0 border-t border-border">
+      <div className="flex gap-1 px-3 py-1.5">
+        <WalkButton
+          label="Blast radius"
+          active={walk?.direction === "dependents"}
+          onClick={() => onWalk(file.path, "dependents")}
+        />
+        <WalkButton
+          label="Dependency chain"
+          active={walk?.direction === "dependencies"}
+          onClick={() => onWalk(file.path, "dependencies")}
+        />
+      </div>
+      {walk !== null ? (
+        <PathList
+          title={title}
+          entries={walk.paths.map((path) => ({ path }))}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function WalkButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`border px-2 py-1 text-[11px] ${
+        active ? "border-accent text-accent" : "border-border text-muted"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function InsightsPanel({ insights }: { insights: readonly Insight[] }) {
+  return (
+    <details className="shrink-0 border-t border-border">
+      <summary className="cursor-pointer px-3 py-1.5 text-[12px]">
+        Insights
+        <span className="float-right font-mono text-muted tabular-nums">
+          {insights.length}
+        </span>
+      </summary>
+      <ul className="m-0 max-h-64 list-none overflow-auto border-t border-border p-0">
+        {insights.map((insight, index) => (
+          <li
+            key={`${insight.kind}:${insight.paths.join("\0")}`}
+            className="border-b border-border py-1.5 last:border-b-0"
+          >
+            <p className="px-3 text-[11px] text-muted">
+              {INSIGHT_SENTENCES[insight.kind]}
+            </p>
+            {insight.paths.map((path) => (
+              <PathButton
+                key={`${index}:${path}`}
+                path={path}
+              />
+            ))}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 function folderTab(tab: DetailTab, kinds: RepositoryDetail["directories"][number]["kinds"]): ReactNode {

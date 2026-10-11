@@ -124,7 +124,9 @@ export function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
             {data.label}
           </span>
           <span className="ml-auto font-mono text-[12px] text-muted tabular-nums">
-            {data.fileCount}
+            {data.matchedCount === null
+              ? data.fileCount
+              : `${data.matchedCount} / ${data.fileCount}`}
           </span>
         </span>
         <span className="mt-0.5 flex gap-3 font-mono text-[11px] text-muted tabular-nums">

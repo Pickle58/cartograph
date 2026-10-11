@@ -33,6 +33,7 @@ async function Analyses() {
   return (
     <div className="h-full overflow-auto">
       <table className="w-full border-collapse text-left">
+        <caption className="sr-only">Analyses in {organization.name}</caption>
         <thead className="text-[11px] text-muted">
           <tr>
             {/* Width 1% plus nowrap makes these columns hug their content;
