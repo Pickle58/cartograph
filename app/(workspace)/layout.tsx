@@ -24,7 +24,7 @@ export default function WorkspaceLayout({ children }: LayoutProps<"/">) {
           <UserButton />
         </div>
       </header>
-      <main className="min-h-0 flex-1">{children}</main>
+      <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
     </div>
   );
 }
