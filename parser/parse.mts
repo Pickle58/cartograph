@@ -11,26 +11,31 @@ import {
   resolveSeenImports,
 } from "./resolve.mts";
 import type { ImportRecord, ModuleKind, ParseResult, ParsedFile, SkippedFile } from "./types.mts";
-import { type WalkedSource, walkRepository } from "./walk.mts";
+import { type Walk, type WalkedSource, walkRepository } from "./walk.mts";
 
 export function parseRepository(
   directory: string,
   adapter: FrameworkAdapter = noFramework,
 ): ParseResult {
+  const root = repositoryRoot(directory);
+  return parseWalked(root, walkRepository(root, adapter));
+}
+
+export function repositoryRoot(directory: string): string {
   const root = path.resolve(directory);
   let stat: fs.Stats;
   try {
     stat = fs.statSync(root);
   } catch (error) {
-    throw new Error(
-      `Cannot read directory ${root}: ${errorMessage(error)}`,
-    );
+    throw new Error(`Cannot read directory ${root}: ${errorMessage(error)}`);
   }
   if (!stat.isDirectory()) {
     throw new Error(`Not a directory: ${root}`);
   }
+  return root;
+}
 
-  const walked = walkRepository(root, adapter);
+export function parseWalked(root: string, walked: Walk): ParseResult {
   const project = openProject(root);
   const parsed: ParsedFile[] = [];
   const skipped: SkippedFile[] = [...walked.skipped];
