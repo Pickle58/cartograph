@@ -22,7 +22,10 @@ export type Database = {
           id: string
           organization_id: string
           project_id: string
+          stage: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message: string | null
           status: Database["public"]["Enums"]["analysis_status"]
+          updated_at: string
         }
         Insert: {
           commit_sha?: string | null
@@ -31,7 +34,10 @@ export type Database = {
           id?: string
           organization_id: string
           project_id: string
+          stage?: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message?: string | null
           status?: Database["public"]["Enums"]["analysis_status"]
+          updated_at?: string
         }
         Update: {
           commit_sha?: string | null
@@ -40,7 +46,10 @@ export type Database = {
           id?: string
           organization_id?: string
           project_id?: string
+          stage?: Database["public"]["Enums"]["analysis_stage"] | null
+          stage_message?: string | null
           status?: Database["public"]["Enums"]["analysis_status"]
+          updated_at?: string
         }
         Relationships: [
           {
@@ -223,6 +232,7 @@ export type Database = {
         Row: {
           analysis_id: string
           id: string
+          lines: number | null
           organization_id: string
           path: string
           skip_reason: string | null
@@ -230,6 +240,7 @@ export type Database = {
         Insert: {
           analysis_id: string
           id?: string
+          lines?: number | null
           organization_id: string
           path: string
           skip_reason?: string | null
@@ -237,6 +248,7 @@ export type Database = {
         Update: {
           analysis_id?: string
           id?: string
+          lines?: number | null
           organization_id?: string
           path?: string
           skip_reason?: string | null
@@ -401,6 +413,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      analysis_stage: "fetch" | "select" | "parse" | "store"
       analysis_status: "queued" | "running" | "complete" | "failed"
       file_role_source: "convention" | "ai"
       import_kind: "import" | "re-export" | "dynamic-import" | "require"
@@ -531,6 +544,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      analysis_stage: ["fetch", "select", "parse", "store"],
       analysis_status: ["queued", "running", "complete", "failed"],
       file_role_source: ["convention", "ai"],
       import_kind: ["import", "re-export", "dynamic-import", "require"],

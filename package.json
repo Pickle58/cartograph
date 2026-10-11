@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "parse": "node parser/cli.mts"
+    "parse": "node parser/cli.mts",
+    "analyze": "node --env-file=.env.local scripts/run-analysis.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",
