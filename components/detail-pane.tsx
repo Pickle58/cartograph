@@ -330,8 +330,16 @@ function GraphWalk({
   const title =
     walk?.direction === "dependents" ? "Blast radius" : "Dependency chain";
   return (
-    <section className="shrink-0 border-t border-border">
-      <div className="flex gap-1 px-3 py-1.5">
+    <section
+      // Results share leftover height with the dependency lists. A shrink-0
+      // section would grow with the walk and push those lists off the pane.
+      className={
+        walk !== null
+          ? "flex min-h-0 flex-1 flex-col border-t border-border"
+          : "shrink-0 border-t border-border"
+      }
+    >
+      <div className="flex shrink-0 gap-1 px-3 py-1.5">
         <WalkButton
           label="Blast radius"
           active={walk?.direction === "dependents"}

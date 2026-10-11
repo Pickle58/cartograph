@@ -61,13 +61,14 @@ export function MapShell({
       // The row only exists once its folder is open.
       const directory = detail.directoryOf.get(path);
       if (directory === undefined) return;
-      setOpen((current) => {
-        if (current.includes(directory)) return current;
+      if (!open.includes(directory)) {
         fitAfterOpenRef.current = true;
-        return [...current, directory].sort();
-      });
+      }
+      setOpen((current) =>
+        current.includes(directory) ? current : [...current, directory].sort(),
+      );
     },
-    [detail.directoryOf],
+    [detail.directoryOf, open],
   );
 
   const clearSelection = useCallback(() => setSelection(null), []);
@@ -95,7 +96,9 @@ export function MapShell({
 
   return (
     <MapActionsProvider actions={actions}>
-      <div className="flex h-full min-h-0">
+      {/* Kind rail (13rem) and detail pane (20rem) already fill 33rem. Below
+          that the canvas would collapse; keep a floor and scroll the row. */}
+      <div className="flex h-full min-h-0 overflow-x-auto overflow-y-hidden">
         <aside
           aria-label="File kinds"
           className="flex w-52 shrink-0 flex-col border-r border-border bg-surface"
@@ -133,7 +136,7 @@ export function MapShell({
             ))}
           </ul>
         </aside>
-        <div className="min-h-0 min-w-0 flex-1 bg-surface-sunken">
+        <div className="min-h-0 min-w-80 flex-1 bg-surface-sunken">
           <DependencyMap
             files={files}
             links={links}
