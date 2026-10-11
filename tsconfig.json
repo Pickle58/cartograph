@@ -12,6 +12,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
+    // The parser is run by Node, which requires the .mts extension on imports.
+    "allowImportingTsExtensions": true,
     "incremental": true,
     "plugins": [
       {
