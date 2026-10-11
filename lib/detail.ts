@@ -1,4 +1,4 @@
-import { categoryCounts, categoryOf, type CategoryCount, type FileCategory } from "@/lib/categories";
+import { categoryCounts, type CategoryCount, type FileCategory } from "@/lib/categories";
 import { foldRepository } from "@/lib/fold";
 import type { MapFile, MapLink } from "@/lib/map-scene";
 
@@ -36,6 +36,7 @@ export type RepositoryDetail = {
 export function repositoryDetail(
   files: readonly MapFile[],
   links: readonly MapLink[],
+  framework: string,
 ): RepositoryDetail {
   const depends = new Map<string, Set<string>>();
   const depended = new Map<string, Set<string>>();
@@ -58,7 +59,7 @@ export function repositoryDetail(
   const unimported: string[] = [];
   let unidentified = 0;
   for (const file of files) {
-    const category = categoryOf(file.path);
+    const category = file.role;
     if (category === "unidentified") unidentified += 1;
     const dependsOn = [...(depends.get(file.path) ?? [])].sort(compareText);
     const dependedOn = [...(depended.get(file.path) ?? [])].sort(compareText);
@@ -83,7 +84,16 @@ export function repositoryDetail(
     for (const path of directory.files) directoryOf.set(path, directory.directory);
     return {
       directory: directory.directory,
-      kinds: categoryCounts(directory.files.map((path) => ({ path }))),
+      kinds: categoryCounts(
+        directory.files.map((filePath) => {
+          const file = byPath.get(filePath);
+          if (file === undefined) {
+            throw new Error(`File ${filePath} is not in the detail`);
+          }
+          return { role: file.category };
+        }),
+        framework,
+      ),
     };
   });
   for (const file of files) {

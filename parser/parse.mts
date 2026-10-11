@@ -5,32 +5,49 @@ import { Node, Project, SyntaxKind, type SourceFile, ts } from "ts-morph";
 
 import { type FrameworkAdapter, noFramework } from "./adapter.mts";
 import { connect } from "./graph.mts";
+import { isRoleId } from "./roles.mts";
 import {
   type ResolutionModeName,
   type SeenImport,
   resolveSeenImports,
 } from "./resolve.mts";
-import type { ImportRecord, ModuleKind, ParseResult, ParsedFile, SkippedFile } from "./types.mts";
-import { type WalkedSource, walkRepository } from "./walk.mts";
+import type {
+  ExtractedRoute,
+  ImportRecord,
+  ModuleKind,
+  ParseResult,
+  ParsedFile,
+  SkippedFile,
+} from "./types.mts";
+import { type Walk, type WalkedSource, walkRepository } from "./walk.mts";
 
 export function parseRepository(
   directory: string,
   adapter: FrameworkAdapter = noFramework,
 ): ParseResult {
+  const root = repositoryRoot(directory);
+  return parseWalked(root, walkRepository(root, adapter), adapter);
+}
+
+export function repositoryRoot(directory: string): string {
   const root = path.resolve(directory);
   let stat: fs.Stats;
   try {
     stat = fs.statSync(root);
   } catch (error) {
-    throw new Error(
-      `Cannot read directory ${root}: ${errorMessage(error)}`,
-    );
+    throw new Error(`Cannot read directory ${root}: ${errorMessage(error)}`);
   }
   if (!stat.isDirectory()) {
     throw new Error(`Not a directory: ${root}`);
   }
+  return root;
+}
 
-  const walked = walkRepository(root, adapter);
+export function parseWalked(
+  root: string,
+  walked: Walk,
+  adapter: FrameworkAdapter = noFramework,
+): ParseResult {
   const project = openProject(root);
   const parsed: ParsedFile[] = [];
   const skipped: SkippedFile[] = [...walked.skipped];
@@ -96,6 +113,10 @@ export function parseRepository(
   const imports = resolvedImports.imports;
   const rawEdges = resolvedImports.edges;
 
+  const classified = adapter.assign(
+    root,
+    sourceFiles.map(({ source, file }) => ({ path: source.path, source: file })),
+  );
   const connected = connect(
     parsed.map((file) => file.path),
     rawEdges,
@@ -111,11 +132,22 @@ export function parseRepository(
     .sort((a, b) => compareText(a.path, b.path));
 
   const result: ParseResult = {
+    framework: adapter.id,
     files,
     skipped: skipped.sort((a, b) => compareText(a.path, b.path)),
     edges: connected.edges,
     imports: imports.sort(compareImports),
     excluded: walked.excluded.sort((a, b) => compareText(a.path, b.path)),
+    roles: classified.roles
+      .map((role) => ({ path: role.path, role: role.role }))
+      .sort((a, b) => compareText(a.path, b.path)),
+    routes: classified.routes
+      .map((route) => ({
+        file: route.file,
+        method: route.method,
+        pattern: route.pattern,
+      }))
+      .sort(compareRoutes),
   };
   assertResult(result);
   return result;
@@ -272,6 +304,33 @@ function assertResult(result: ParseResult): void {
       );
     }
   }
+  const rolePaths = new Set<string>();
+  for (const role of result.roles) {
+    if (!nodes.has(role.path)) {
+      throw new Error(`Role for ${role.path} is not a parsed file`);
+    }
+    if (!isRoleId(role.role)) {
+      throw new Error(`Role for ${role.path} is not a known role`);
+    }
+    if (rolePaths.has(role.path)) {
+      throw new Error(`Two roles for ${role.path}`);
+    }
+    rolePaths.add(role.path);
+  }
+  const routeKeys = new Set<string>();
+  for (const route of result.routes) {
+    if (!nodes.has(route.file)) {
+      throw new Error(`Route ${route.method} ${route.pattern} is not a parsed file`);
+    }
+    if (!route.pattern.startsWith("/")) {
+      throw new Error(`Route ${route.method} ${route.pattern} has no pattern`);
+    }
+    const key = `${route.file}\0${route.method}\0${route.pattern}`;
+    if (routeKeys.has(key)) {
+      throw new Error(`Duplicate route ${route.method} ${route.pattern} on ${route.file}`);
+    }
+    routeKeys.add(key);
+  }
   for (const record of result.imports) {
     if (record.resolution.status === "unresolved" && record.resolution.reason.length === 0) {
       throw new Error(
@@ -284,6 +343,14 @@ function assertResult(result: ParseResult): void {
       );
     }
   }
+}
+
+function compareRoutes(a: ExtractedRoute, b: ExtractedRoute): number {
+  return (
+    compareText(a.pattern, b.pattern) ||
+    compareText(a.method, b.method) ||
+    compareText(a.file, b.file)
+  );
 }
 
 function compareImports(a: ImportRecord, b: ImportRecord): number {

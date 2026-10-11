@@ -1,13 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { selectAdapter } from "./detect.mts";
 import { parseRepository } from "./parse.mts";
 import { readParseResult, type ImportRecord, type ParseResult } from "./types.mts";
 
 const directory = readArguments(process.argv.slice(2));
 
 try {
-  const result = parseRepository(directory.directory);
+  const adapter = selectAdapter(directory.directory);
+  const result = parseRepository(directory.directory, adapter);
   report(result);
   if (directory.out !== undefined) {
     writeAndReadBack(directory.out, result);
@@ -24,11 +26,25 @@ function report(result: ParseResult): void {
   const reexports = result.imports.filter((record) => record.kind === "re-export");
   const reexportResolutions = countResolutions(reexports);
 
+  console.log(`framework: ${result.framework}`);
   console.log(`files found: ${found}`);
   console.log(`files parsed: ${result.files.length}`);
   console.log(`files skipped: ${result.skipped.length}`);
   console.log(`distinct folders: ${folders.size}`);
   console.log(`edges: ${result.edges.length}`);
+  console.log(`routes: ${result.routes.length}`);
+  const roleCounts = new Map<string, number>();
+  for (const role of result.roles) {
+    roleCounts.set(role.role, (roleCounts.get(role.role) ?? 0) + 1);
+  }
+  console.log("roles:");
+  for (const [role, count] of [...roleCounts].sort((a, b) => compareText(a[0], b[0]))) {
+    console.log(`  ${role}: ${count}`);
+  }
+  console.log("routes:");
+  for (const route of result.routes) {
+    console.log(`  ${route.method} ${route.pattern} ${route.file}`);
+  }
   console.log(`imports resolved: ${resolutions.resolved}`);
   console.log(`imports outside: ${resolutions.outside}`);
   console.log(`imports excluded: ${resolutions.excluded}`);
@@ -108,6 +124,12 @@ function countResolutions(records: readonly ImportRecord[]): {
     }
   }
   return counts;
+}
+
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, string[]> {

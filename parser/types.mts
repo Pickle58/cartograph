@@ -1,3 +1,5 @@
+import { isRoleId } from "./roles.mts";
+
 export type ModuleKind = "module" | "script";
 
 export type ImportKind = "import" | "re-export" | "dynamic-import";
@@ -43,12 +45,26 @@ export type ExcludedPath = {
   reason: string;
 };
 
+export type AssignedRole = {
+  path: string;
+  role: string;
+};
+
+export type ExtractedRoute = {
+  file: string;
+  method: string;
+  pattern: string;
+};
+
 export type ParseResult = {
+  framework: string;
   files: ParsedFile[];
   skipped: SkippedFile[];
   edges: Edge[];
   imports: ImportRecord[];
   excluded: ExcludedPath[];
+  roles: AssignedRole[];
+  routes: ExtractedRoute[];
 };
 
 export function resolved(target: string): ImportResolution {
@@ -78,6 +94,12 @@ const MODULE_KINDS: readonly ModuleKind[] = ["module", "script"];
 export function readParseResult(value: unknown): ParseResult {
   const record = asRecord(value, "result");
   return {
+    // Written before classification. No framework and no routes, rather than
+    // a guess filled in at read time.
+    framework:
+      record.framework === undefined
+        ? "none"
+        : readString(record.framework, "framework"),
     files: asArray(record.files, "files").map((entry, index) =>
       readParsedFile(entry, `files[${index}]`),
     ),
@@ -93,6 +115,46 @@ export function readParseResult(value: unknown): ParseResult {
     excluded: asArray(record.excluded, "excluded").map((entry, index) =>
       readExcluded(entry, `excluded[${index}]`),
     ),
+    roles:
+      record.roles === undefined
+        ? []
+        : asArray(record.roles, "roles").map((entry, index) =>
+            readRole(entry, `roles[${index}]`),
+          ),
+    routes:
+      record.routes === undefined
+        ? []
+        : asArray(record.routes, "routes").map((entry, index) =>
+            readRoute(entry, `routes[${index}]`),
+          ),
+  };
+}
+
+function readRole(value: unknown, where: string): { path: string; role: string } {
+  const record = asRecord(value, where);
+  const role = readString(record.role, `${where}.role`);
+  if (!isRoleId(role)) {
+    throw new Error(`Parse result is not valid: ${where}.role is not a known role`);
+  }
+  return {
+    path: readString(record.path, `${where}.path`),
+    role,
+  };
+}
+
+function readRoute(
+  value: unknown,
+  where: string,
+): { file: string; method: string; pattern: string } {
+  const record = asRecord(value, where);
+  const pattern = readString(record.pattern, `${where}.pattern`);
+  if (!pattern.startsWith("/")) {
+    throw new Error(`Parse result is not valid: ${where}.pattern does not start with /`);
+  }
+  return {
+    file: readString(record.file, `${where}.file`),
+    method: readString(record.method, `${where}.method`),
+    pattern,
   };
 }
 
