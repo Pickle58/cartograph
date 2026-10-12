@@ -24,9 +24,12 @@ export type FetchedRepository = {
 };
 
 export class RepositoryFetchError extends Error {
-  constructor(message: string) {
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null = null) {
     super(message);
     this.name = "RepositoryFetchError";
+    this.status = status;
   }
 }
 
@@ -66,6 +69,16 @@ export async function fetchPublicRepository(
 ): Promise<FetchedRepository> {
   const repository = parseGithubRepository(input);
   const commitSha = await fetchHeadCommit(repository);
+  return fetchRepositoryAtCommit(repository, commitSha);
+}
+
+export async function fetchRepositoryAtCommit(
+  repository: string,
+  commitSha: string,
+): Promise<FetchedRepository> {
+  if (!/^[0-9a-f]{40}$/.test(commitSha)) {
+    throw new RepositoryFetchError(`Not a commit: ${commitSha}`);
+  }
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), "cartograph-"));
   const cleanup = async (): Promise<void> => {
     await fs.promises.rm(root, { recursive: true, force: true });
@@ -90,7 +103,59 @@ export async function fetchPublicRepository(
   }
 }
 
-async function fetchHeadCommit(repository: string): Promise<string> {
+// One file at one commit. The archive is the right tool for a whole repository;
+// an explanation only needs the file it was asked about.
+export async function fetchRepositoryFile(
+  repository: string,
+  commitSha: string,
+  filePath: string,
+): Promise<Buffer> {
+  if (!/^[0-9a-f]{40}$/.test(commitSha)) {
+    throw new RepositoryFetchError(`Not a commit: ${commitSha}`);
+  }
+  if (!isRepoFilePath(filePath)) {
+    throw new RepositoryFetchError(`Not a repository file path: ${filePath}`);
+  }
+  const encoded = filePath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const response = await githubFetch(
+    `https://api.github.com/repos/${repository}/contents/${encoded}?ref=${commitSha}`,
+  );
+  if (response.status === 404) {
+    throw new RepositoryFetchError(
+      `${filePath} is not in ${repository} at ${commitSha.slice(0, 7)}`,
+      404,
+    );
+  }
+  if (response.status === 403) {
+    throw new RepositoryFetchError(rateLimitMessage(response), 403);
+  }
+  if (!response.ok) {
+    throw new RepositoryFetchError(
+      `GitHub returned ${response.status} reading ${filePath}`,
+      response.status,
+    );
+  }
+  const body: unknown = await response.json();
+  if (Array.isArray(body)) {
+    throw new RepositoryFetchError(`${filePath} is a directory`);
+  }
+  if (typeof body !== "object" || body === null) {
+    throw new RepositoryFetchError(`GitHub did not return ${filePath}`);
+  }
+  const content = "content" in body ? body.content : undefined;
+  const encoding = "encoding" in body ? body.encoding : undefined;
+  if (typeof content !== "string" || encoding !== "base64") {
+    throw new RepositoryFetchError(
+      `${filePath} is too large to read from GitHub`,
+    );
+  }
+  return Buffer.from(content.replaceAll(/\s/g, ""), "base64");
+}
+
+export async function fetchHeadCommit(repository: string): Promise<string> {
   const response = await githubFetch(
     `https://api.github.com/repos/${repository}/commits/HEAD`,
   );
@@ -246,6 +311,13 @@ async function githubFetch(url: string): Promise<Response> {
   } catch (error) {
     throw new RepositoryFetchError(`Could not reach GitHub: ${errorMessage(error)}`);
   }
+}
+
+function isRepoFilePath(filePath: string): boolean {
+  if (filePath.length === 0 || filePath.startsWith("/") || filePath.endsWith("/")) {
+    return false;
+  }
+  return filePath.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
 }
 
 function namedRepository(owner: string | undefined, name: string | undefined): string {

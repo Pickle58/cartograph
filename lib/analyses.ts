@@ -60,13 +60,17 @@ export async function listAnalyses(): Promise<AnalysisSummary[]> {
   }));
 }
 
-export async function getAnalysis(id: string): Promise<AnalysisSummary | null> {
+type StoredAnalysis = AnalysisSummary & {
+  framework: string;
+};
+
+export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
   const supabase = await createSupabaseClient();
 
   const { data, error } = await supabase
     .from("analyses")
     .select(
-      "id, status, stage, stage_message, commit_sha, failure_reason, created_at, updated_at, project:projects!inner(repository)",
+      "id, status, stage, stage_message, commit_sha, failure_reason, framework, created_at, updated_at, project:projects!inner(repository)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -84,6 +88,7 @@ export async function getAnalysis(id: string): Promise<AnalysisSummary | null> {
     stageMessage: data.stage_message,
     commitSha: data.commit_sha,
     failureReason: data.failure_reason,
+    framework: data.framework,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
@@ -121,21 +126,22 @@ export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
     throw new Error(`Could not load roles: ${rolesError.message}`);
   }
 
-  const { data: routeRows, error: routesError } = await supabase
-    .from("routes")
-    .select("file_id, method, path")
-    .eq("analysis_id", id);
-  if (routesError) {
-    throw new Error(`Could not load routes: ${routesError.message}`);
-  }
-
-  const { data: frameworkRow, error: frameworkError } = await supabase
-    .from("analyses")
-    .select("framework")
-    .eq("id", id)
-    .single();
-  if (frameworkError) {
-    throw new Error(`Could not load framework: ${frameworkError.message}`);
+  // PostgREST stops a select at its row cap. Page until the range is empty so
+  // a long route list is not returned as a shorter one.
+  const routeRows: { file_id: string; method: string; path: string }[] = [];
+  for (let from = 0; ; ) {
+    const { data, error } = await supabase
+      .from("routes")
+      .select("file_id, method, path")
+      .eq("analysis_id", id)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (error) {
+      throw new Error(`Could not load routes: ${error.message}`);
+    }
+    if (data.length === 0) break;
+    routeRows.push(...data);
+    from += data.length;
   }
 
   const pathById = new Map<string, string>();
@@ -193,7 +199,7 @@ export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
 
   return {
     repository: analysis.repository,
-    framework: frameworkRow.framework,
+    framework: analysis.framework,
     files,
     links,
     routes,

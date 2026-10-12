@@ -26,11 +26,17 @@
   --kind-test: #6d28d9;
   --kind-page: #e11d48;
   --kind-api: #0e7490;
+  --kind-layout: #44403c;
+  --kind-component: #86198f;
   --kind-action: #a21caf;
   --kind-controller: #e11d48;
   --kind-service: #0e7490;
   --kind-module: #a21caf;
   --kind-entity: #3f6212;
+  --kind-repository: #7f1d1d;
+  --kind-model: #134e4a;
+  --kind-util: #57534e;
+  --kind-config: #3730a3;
   --incoming: #15803d;
   --outgoing: #b45309;
 }
@@ -51,11 +57,17 @@
   --kind-test: #c4b5fd;
   --kind-page: #fb7185;
   --kind-api: #67e8f9;
+  --kind-layout: #e7e5e4;
+  --kind-component: #f0abfc;
   --kind-action: #e879f9;
   --kind-controller: #fb7185;
   --kind-service: #67e8f9;
   --kind-module: #e879f9;
   --kind-entity: #d9f99d;
+  --kind-repository: #fecaca;
+  --kind-model: #99f6e4;
+  --kind-util: #d6d3d1;
+  --kind-config: #c7d2fe;
   --incoming: #4ade80;
   --outgoing: #fbbf24;
 }
@@ -75,11 +87,17 @@
   --color-kind-test: var(--kind-test);
   --color-kind-page: var(--kind-page);
   --color-kind-api: var(--kind-api);
+  --color-kind-layout: var(--kind-layout);
+  --color-kind-component: var(--kind-component);
   --color-kind-action: var(--kind-action);
   --color-kind-controller: var(--kind-controller);
   --color-kind-service: var(--kind-service);
   --color-kind-module: var(--kind-module);
   --color-kind-entity: var(--kind-entity);
+  --color-kind-repository: var(--kind-repository);
+  --color-kind-model: var(--kind-model);
+  --color-kind-util: var(--kind-util);
+  --color-kind-config: var(--kind-config);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

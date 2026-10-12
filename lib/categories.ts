@@ -1,20 +1,25 @@
 import {
   API_ENDPOINT,
   APP_RAIL,
+  ASTRO_RAIL,
+  COMPONENT,
   CONTROLLER,
   ENTITY,
   GENERIC_RAIL,
   HOOK,
   JSX,
+  LAYOUT,
   MODULE,
   PAGE_ROUTE,
   ROLE_LABELS,
+  MODEL_ROLE_IDS,
   SERVER_ACTION,
   SERVICE,
   SERVICE_RAIL,
   TEST,
   TYPES,
   UNIDENTIFIED,
+  isModelRole,
   isRoleId,
   type RoleId,
 } from "@/parser/roles.mts";
@@ -27,7 +32,7 @@ export type CategoryCount = {
   count: number;
 };
 
-type KnownFramework = "nextjs" | "nestjs" | "react" | "none";
+type KnownFramework = "nextjs" | "nestjs" | "astro" | "express" | "react" | "none";
 
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const DECLARATION_FILE = /\.d\.[cm]?ts$/;
@@ -58,6 +63,10 @@ export function frameworkLabel(framework: string): string {
       return "Next.js";
     case "nestjs":
       return "NestJS";
+    case "astro":
+      return "Astro";
+    case "express":
+      return "Express";
     case "react":
       return "React";
     case "none":
@@ -76,6 +85,8 @@ export function isFrameworkEntry(category: FileCategory): boolean {
     case "server-action":
     case "controller":
       return true;
+    case "layout":
+    case "component":
     case "service":
     case "module":
     case "entity":
@@ -83,6 +94,10 @@ export function isFrameworkEntry(category: FileCategory): boolean {
     case "hook":
     case "types":
     case "test":
+    case "repository":
+    case "model":
+    case "util":
+    case "config":
     case "unidentified":
       return false;
     default: {
@@ -102,7 +117,9 @@ export function categoryCounts(
   const counts = new Map<FileCategory, number>();
   for (const id of rail) counts.set(id, 0);
   for (const file of files) {
-    const id = rail.includes(file.role) ? file.role : UNIDENTIFIED;
+    // A model label still counts when this framework's rail doesn't list it.
+    // Folding it into unidentified would hide the role the model just assigned.
+    const id = rail.includes(file.role) || isModelRole(file.role) ? file.role : UNIDENTIFIED;
     counts.set(id, (counts.get(id) ?? 0) + 1);
   }
   const listed: CategoryCount[] = [];
@@ -111,7 +128,28 @@ export function categoryCounts(
     if (count === 0 && !pinned.has(id)) continue;
     listed.push({ id, label: ROLE_LABELS[id], count });
   }
+  const extras: CategoryCount[] = [];
+  for (const id of MODEL_ROLE_IDS) {
+    if (rail.includes(id)) continue;
+    const count = counts.get(id) ?? 0;
+    if (count === 0) continue;
+    extras.push({ id, label: ROLE_LABELS[id], count });
+  }
+  if (extras.length === 0) return listed;
+  const unidentified = listed.findIndex((item) => item.id === UNIDENTIFIED);
+  if (unidentified === -1) listed.push(...extras);
+  else listed.splice(unidentified, 0, ...extras);
   return listed;
+}
+
+// Convention and adapters already named this file. Classification is only for
+// what's left, so a hook or a page is never sent to the model.
+export function needsModelRole(
+  filePath: string,
+  assigned: ReadonlyMap<string, string> | ReadonlySet<string>,
+): boolean {
+  if (assigned.has(filePath)) return false;
+  return categoryOf(filePath) === UNIDENTIFIED;
 }
 
 export function resolveRole(
@@ -130,7 +168,10 @@ function railFor(framework: KnownFramework): readonly FileCategory[] {
   switch (framework) {
     case "nextjs":
       return APP_RAIL;
+    case "astro":
+      return ASTRO_RAIL;
     case "nestjs":
+    case "express":
       return SERVICE_RAIL;
     case "react":
     case "none":
@@ -146,7 +187,10 @@ function pinnedRoles(framework: KnownFramework): ReadonlySet<FileCategory> {
   switch (framework) {
     case "nextjs":
       return new Set([PAGE_ROUTE, API_ENDPOINT, SERVER_ACTION]);
+    case "astro":
+      return new Set([PAGE_ROUTE, API_ENDPOINT, LAYOUT, COMPONENT]);
     case "nestjs":
+    case "express":
       return new Set([CONTROLLER, SERVICE, MODULE, ENTITY]);
     case "react":
     case "none":
@@ -162,6 +206,8 @@ function asFramework(framework: string): KnownFramework | undefined {
   switch (framework) {
     case "nextjs":
     case "nestjs":
+    case "astro":
+    case "express":
     case "react":
     case "none":
       return framework;

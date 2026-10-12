@@ -48,6 +48,7 @@ type Classified = {
   role: RoleId;
   pattern: string;
   kind: "page" | "api";
+  router: "app" | "pages";
 };
 
 export const nextAdapter: FrameworkAdapter = {
@@ -128,27 +129,42 @@ function classifyApp(relativeFile: string): Classified | undefined {
   if (kind === undefined) return undefined;
   const pattern = appPattern(parentDir(relativeFile));
   if (pattern === undefined) return undefined;
-  return { role: kind === "page" ? PAGE_ROUTE : API_ENDPOINT, pattern, kind };
+  return { role: kind === "page" ? PAGE_ROUTE : API_ENDPOINT, pattern, kind, router: "app" };
 }
 
 function classifyPages(relativeFile: string): Classified | undefined {
   if (isPagesApi(relativeFile)) {
     const pattern = pagesPattern(relativeFile);
     if (pattern === undefined) return undefined;
-    return { role: API_ENDPOINT, pattern, kind: "api" };
+    return { role: API_ENDPOINT, pattern, kind: "api", router: "pages" };
   }
   const pattern = pagesPattern(relativeFile);
   if (pattern === undefined) return undefined;
-  return { role: PAGE_ROUTE, pattern, kind: "page" };
+  return { role: PAGE_ROUTE, pattern, kind: "page", router: "pages" };
 }
 
 function emitRoutes(
   classified: readonly { file: AdapterFile; found: Classified }[],
   options: RouteOptions,
 ): AdapterRoute[] {
+  // appPattern already drops route groups, so this key is the URL. Two app
+  // files on one URL cannot both be served, and neither pattern is emitted.
+  const appFilesByPattern = new Map<string, Set<string>>();
+  for (const entry of classified) {
+    if (entry.found.router !== "app") continue;
+    const files = appFilesByPattern.get(entry.found.pattern) ?? new Set<string>();
+    files.add(entry.file.path);
+    appFilesByPattern.set(entry.found.pattern, files);
+  }
+  const conflicting = new Set<string>();
+  for (const [pattern, files] of appFilesByPattern) {
+    if (files.size > 1) conflicting.add(pattern);
+  }
+
   const routes: AdapterRoute[] = [];
   const seen = new Set<string>();
   for (const entry of classified) {
+    if (entry.found.router === "app" && conflicting.has(entry.found.pattern)) continue;
     const pattern = applyOptions(entry.found.pattern, options);
     if (pattern === undefined) continue;
     // A page file exports no method. The framework serves it as GET only.

@@ -3,6 +3,8 @@
 export const PAGE_ROUTE = "page-route";
 export const API_ENDPOINT = "api-endpoint";
 export const SERVER_ACTION = "server-action";
+export const LAYOUT = "layout";
+export const COMPONENT = "component";
 export const CONTROLLER = "controller";
 export const SERVICE = "service";
 export const MODULE = "module";
@@ -12,11 +14,20 @@ export const HOOK = "hook";
 export const TYPES = "types";
 export const TEST = "test";
 export const UNIDENTIFIED = "unidentified";
+// Labels the model may assign when no adapter claimed the file. They are not
+// structural: page, route and controller stay with the adapters, because those
+// decide the route table and the entry-point colour.
+export const REPOSITORY = "repository";
+export const MODEL = "model";
+export const UTIL = "util";
+export const CONFIG = "config";
 
 export const ROLE_IDS = [
   PAGE_ROUTE,
   API_ENDPOINT,
   SERVER_ACTION,
+  LAYOUT,
+  COMPONENT,
   CONTROLLER,
   SERVICE,
   MODULE,
@@ -25,6 +36,10 @@ export const ROLE_IDS = [
   HOOK,
   TYPES,
   TEST,
+  REPOSITORY,
+  MODEL,
+  UTIL,
+  CONFIG,
   UNIDENTIFIED,
 ] as const;
 
@@ -34,6 +49,8 @@ export const ROLE_LABELS: Record<RoleId, string> = {
   [PAGE_ROUTE]: "Page routes",
   [API_ENDPOINT]: "API endpoints",
   [SERVER_ACTION]: "Server actions",
+  [LAYOUT]: "Layouts",
+  [COMPONENT]: "Components",
   [CONTROLLER]: "Controllers",
   [SERVICE]: "Services",
   [MODULE]: "Modules",
@@ -42,13 +59,47 @@ export const ROLE_LABELS: Record<RoleId, string> = {
   [HOOK]: "Hook",
   [TYPES]: "Types",
   [TEST]: "Test",
+  [REPOSITORY]: "Repositories",
+  [MODEL]: "Models",
+  [UTIL]: "Utils",
+  [CONFIG]: "Config",
   [UNIDENTIFIED]: "Unidentified",
 };
+
+// The only answers classification may give. Structural roles are absent on
+// purpose: convention owns those.
+export const MODEL_ROLE_IDS = [
+  SERVICE,
+  REPOSITORY,
+  MODEL,
+  UTIL,
+  CONFIG,
+  COMPONENT,
+  HOOK,
+] as const;
+
+export type ModelRoleId = (typeof MODEL_ROLE_IDS)[number];
+
+const MODEL_ROLE_SET: ReadonlySet<string> = new Set(MODEL_ROLE_IDS);
+
+export function isModelRole(value: string): value is ModelRoleId {
+  return MODEL_ROLE_SET.has(value);
+}
 
 // Routable surfaces, then the layers behind them, then plumbing. Generic
 // leftovers stay in this order on every rail so a file that no adapter claimed
 // still has a place.
-export const GENERIC_RAIL: readonly RoleId[] = [JSX, HOOK, TYPES, TEST, UNIDENTIFIED];
+export const GENERIC_RAIL: readonly RoleId[] = [
+  JSX,
+  HOOK,
+  TYPES,
+  TEST,
+  REPOSITORY,
+  MODEL,
+  UTIL,
+  CONFIG,
+  UNIDENTIFIED,
+];
 
 export const APP_RAIL: readonly RoleId[] = [
   PAGE_ROUTE,
@@ -62,6 +113,14 @@ export const SERVICE_RAIL: readonly RoleId[] = [
   SERVICE,
   MODULE,
   ENTITY,
+  ...GENERIC_RAIL,
+];
+
+export const ASTRO_RAIL: readonly RoleId[] = [
+  PAGE_ROUTE,
+  API_ENDPOINT,
+  LAYOUT,
+  COMPONENT,
   ...GENERIC_RAIL,
 ];
 
