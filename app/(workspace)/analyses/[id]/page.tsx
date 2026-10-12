@@ -4,9 +4,8 @@ import { CoverageBanner } from "@/components/coverage-banner";
 import { MapShell } from "@/components/map-shell";
 import { ProgressView } from "@/components/progress-view";
 import { getAnalysis, getAnalysisGraph } from "@/lib/analyses";
-import { categoryCounts } from "@/lib/categories";
+import { categoryCounts, frameworkLabel } from "@/lib/categories";
 import { coverageIsPartial } from "@/lib/coverage";
-import { noFramework } from "@/parser/adapter.mts";
 
 export const maxDuration = 300;
 
@@ -36,7 +35,7 @@ async function Analysis({
   }
 
   const graph = await getAnalysisGraph(id);
-  const categories = categoryCounts(graph.files);
+  const categories = categoryCounts(graph.files, graph.framework);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -46,9 +45,11 @@ async function Analysis({
       <div className="min-h-0 flex-1">
         <MapShell
           name={graph.repository}
-          framework={noFramework.id}
+          framework={frameworkLabel(graph.framework)}
+          frameworkId={graph.framework}
           importCount={graph.links.length}
-          routeCount={0}
+          routeCount={graph.routes.length}
+          routes={graph.routes}
           categories={categories}
           files={graph.files}
           links={graph.links}

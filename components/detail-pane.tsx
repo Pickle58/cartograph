@@ -16,11 +16,18 @@ import type { MapLink, MapSelection } from "@/lib/map-scene";
 
 export type DetailTab = "structure" | "explanation";
 
+export type ListedRoute = {
+  file: string;
+  method: string;
+  pattern: string;
+};
+
 export function DetailPane({
   name,
   framework,
   importCount,
   routeCount,
+  routes,
   detail,
   links,
   insights,
@@ -32,6 +39,7 @@ export function DetailPane({
   framework: string;
   importCount: number;
   routeCount: number;
+  routes: readonly ListedRoute[];
   detail: RepositoryDetail;
   links: readonly MapLink[];
   insights: readonly Insight[];
@@ -57,6 +65,7 @@ export function DetailPane({
         framework={framework}
         importCount={importCount}
         routeCount={routeCount}
+        routes={routes}
         detail={detail}
         links={links}
         insights={insights}
@@ -77,6 +86,7 @@ function PaneBody({
   framework,
   importCount,
   routeCount,
+  routes,
   detail,
   insights,
   selection,
@@ -89,6 +99,7 @@ function PaneBody({
   framework: string;
   importCount: number;
   routeCount: number;
+  routes: readonly ListedRoute[];
   detail: RepositoryDetail;
   links: readonly MapLink[];
   insights: readonly Insight[];
@@ -109,6 +120,7 @@ function PaneBody({
         framework={framework}
         importCount={importCount}
         routeCount={routeCount}
+        routes={routes}
         detail={detail}
         insights={insights}
       />
@@ -146,6 +158,7 @@ function Summary({
   framework,
   importCount,
   routeCount,
+  routes,
   detail,
   insights,
 }: {
@@ -153,6 +166,7 @@ function Summary({
   framework: string;
   importCount: number;
   routeCount: number;
+  routes: readonly ListedRoute[];
   detail: RepositoryDetail;
   insights: readonly Insight[];
 }) {
@@ -166,6 +180,7 @@ function Summary({
         <Stat label="Routes" value={routeCount} />
         <Stat label="Unidentified" value={detail.unidentified} />
       </div>
+      <RouteTable routes={routes} />
       <PathList title="Most imported" entries={detail.leanedOn} headingCount={false} />
       <PathList
         title="Where reading starts"
@@ -381,6 +396,48 @@ function WalkButton({
     >
       {label}
     </button>
+  );
+}
+
+function RouteTable({ routes }: { routes: readonly ListedRoute[] }) {
+  return (
+    <section className="flex max-h-48 min-h-0 shrink-0 flex-col border-b border-border">
+      <div className="shrink-0 px-3 py-1.5 text-[12px]">Routes</div>
+      <div className="map-file-list min-h-0 flex-1 overflow-auto">
+        <table className="w-full border-collapse text-left">
+          <thead className="text-[11px] text-muted">
+            <tr>
+              <th className="sticky top-0 w-[1%] bg-surface px-3 py-1 font-normal whitespace-nowrap">
+                Method
+              </th>
+              <th className="sticky top-0 bg-surface px-3 py-1 font-normal">Pattern</th>
+              <th className="sticky top-0 bg-surface px-3 py-1 font-normal">File</th>
+            </tr>
+          </thead>
+          <tbody>
+            {routes.length === 0 ? (
+              <tr>
+                <td className="px-3 py-1.5 text-[12px] text-muted" colSpan={3}>
+                  No routes
+                </td>
+              </tr>
+            ) : (
+              routes.map((route) => (
+                <tr key={`${route.method}\0${route.pattern}\0${route.file}`} className="border-t border-border">
+                  <td className="px-3 py-1 font-mono text-[12px] whitespace-nowrap">
+                    {route.method}
+                  </td>
+                  <td className="px-3 py-1 font-mono text-[12px] break-all">{route.pattern}</td>
+                  <td className="py-0.5">
+                    <PathButton path={route.file} />
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

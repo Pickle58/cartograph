@@ -24,6 +24,13 @@
   --kind-hook: #be185d;
   --kind-types: #0f766e;
   --kind-test: #6d28d9;
+  --kind-page: #e11d48;
+  --kind-api: #0e7490;
+  --kind-action: #a21caf;
+  --kind-controller: #e11d48;
+  --kind-service: #0e7490;
+  --kind-module: #a21caf;
+  --kind-entity: #3f6212;
   --incoming: #15803d;
   --outgoing: #b45309;
 }
@@ -42,6 +49,13 @@
   --kind-hook: #f9a8d4;
   --kind-types: #5eead4;
   --kind-test: #c4b5fd;
+  --kind-page: #fb7185;
+  --kind-api: #67e8f9;
+  --kind-action: #e879f9;
+  --kind-controller: #fb7185;
+  --kind-service: #67e8f9;
+  --kind-module: #e879f9;
+  --kind-entity: #d9f99d;
   --incoming: #4ade80;
   --outgoing: #fbbf24;
 }
@@ -59,6 +73,13 @@
   --color-kind-hook: var(--kind-hook);
   --color-kind-types: var(--kind-types);
   --color-kind-test: var(--kind-test);
+  --color-kind-page: var(--kind-page);
+  --color-kind-api: var(--kind-api);
+  --color-kind-action: var(--kind-action);
+  --color-kind-controller: var(--kind-controller);
+  --color-kind-service: var(--kind-service);
+  --color-kind-module: var(--kind-module);
+  --color-kind-entity: var(--kind-entity);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

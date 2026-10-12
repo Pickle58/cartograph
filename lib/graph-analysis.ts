@@ -1,3 +1,4 @@
+import { isFrameworkEntry } from "@/lib/categories";
 import type { MapFile, MapLink } from "@/lib/map-scene";
 
 export type WalkDirection = "dependencies" | "dependents";
@@ -69,7 +70,7 @@ export function graphInsights(
   const oversized: Insight[] = [];
   for (const file of [...files].sort((left, right) => compareText(left.path, right.path))) {
     const imports = fanIn.get(file.path) ?? 0;
-    if (imports === 0 && !isImplicitEntrypoint(file.path)) {
+    if (imports === 0 && !isImplicitEntrypoint(file)) {
       unimported.push({ kind: "unimported", paths: [file.path] });
     }
     if (imports > 0 && imports > unusualThreshold) {
@@ -203,9 +204,10 @@ function percentile(ordered: readonly number[], position: number): number {
   return ordered[lower] + (ordered[Math.ceil(index)] - ordered[lower]) * fraction;
 }
 
-function isImplicitEntrypoint(path: string): boolean {
-  const segments = path.split("/");
-  const base = segments[segments.length - 1] ?? path;
+function isImplicitEntrypoint(file: MapFile): boolean {
+  if (isFrameworkEntry(file.role)) return true;
+  const segments = file.path.split("/");
+  const base = segments[segments.length - 1] ?? file.path;
   const stem = base.replace(/\.[^.]+$/, "");
   if (stem === "page" || stem === "route" || stem === "layout") return true;
   if (stem === "middleware") return true;

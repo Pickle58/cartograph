@@ -14,21 +14,28 @@ import type { MapFile, MapLink, MapSelection } from "@/lib/map-scene";
 export function MapShell({
   name,
   framework,
+  frameworkId,
   importCount,
   routeCount,
+  routes,
   categories,
   files,
   links,
 }: {
   name: string;
   framework: string;
+  frameworkId: string;
   importCount: number;
   routeCount: number;
+  routes: readonly { file: string; method: string; pattern: string }[];
   categories: readonly CategoryCount[];
   files: readonly MapFile[];
   links: readonly MapLink[];
 }) {
-  const detail = useMemo(() => repositoryDetail(files, links), [files, links]);
+  const detail = useMemo(
+    () => repositoryDetail(files, links, frameworkId),
+    [files, links, frameworkId],
+  );
   const insights = useMemo(() => graphInsights(files, links), [files, links]);
   const [open, setOpen] = useState<readonly string[]>([]);
   const [activeCategory, setActiveCategory] = useState<FileCategory | null>(null);
@@ -151,6 +158,7 @@ export function MapShell({
           framework={framework}
           importCount={importCount}
           routeCount={routeCount}
+          routes={routes}
           detail={detail}
           links={links}
           insights={insights}

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { noFramework } from "../parser/adapter.mts";
+import { selectAdapter } from "../parser/detect.mts";
 import { parseWalked, repositoryRoot } from "../parser/parse.mts";
 import type { ParseResult } from "../parser/types.mts";
 import { walkRepository } from "../parser/walk.mts";
@@ -86,11 +86,12 @@ export async function runAnalysis(
     stage = "select";
     await setStage(supabase, analysis.id, stage);
     const root = repositoryRoot(fetched.directory);
-    const walked = walkRepository(root, noFramework);
+    const adapter = selectAdapter(root);
+    const walked = walkRepository(root, adapter);
 
     stage = "parse";
     await setStage(supabase, analysis.id, stage);
-    const parsed = parseWalked(root, walked);
+    const parsed = parseWalked(root, walked, adapter);
 
     stage = "store";
     await setStage(supabase, analysis.id, stage);
@@ -101,6 +102,7 @@ export async function runAnalysis(
       stage,
       stage_message: "Saved",
       failure_reason: null,
+      framework: parsed.framework,
     });
 
     return { kind: "complete", id: analysis.id };
@@ -181,6 +183,50 @@ export async function storeParseResult(
     const { error } = await supabase.from("edges").insert(batch);
     if (error) {
       throw new Error(`Could not store edges: ${error.message}`);
+    }
+  }
+
+  const roleRows = parsed.roles.map((role) => {
+    const fileId = ids.get(role.path);
+    if (fileId === undefined) {
+      throw new Error(`Role for ${role.path} points at a file that was not stored`);
+    }
+    return {
+      organization_id: organizationId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      role: role.role,
+      source: "convention" as const,
+    };
+  });
+
+  for (const batch of chunks(roleRows, INSERT_BATCH)) {
+    const { error } = await supabase.from("file_roles").insert(batch);
+    if (error) {
+      throw new Error(`Could not store roles: ${error.message}`);
+    }
+  }
+
+  const routeRows = parsed.routes.map((route) => {
+    const fileId = ids.get(route.file);
+    if (fileId === undefined) {
+      throw new Error(
+        `Route ${route.method} ${route.pattern} points at a file that was not stored`,
+      );
+    }
+    return {
+      organization_id: organizationId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      method: route.method,
+      path: route.pattern,
+    };
+  });
+
+  for (const batch of chunks(routeRows, INSERT_BATCH)) {
+    const { error } = await supabase.from("routes").insert(batch);
+    if (error) {
+      throw new Error(`Could not store routes: ${error.message}`);
     }
   }
 }

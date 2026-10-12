@@ -19,6 +19,7 @@ export type Database = {
           commit_sha: string | null
           created_at: string
           failure_reason: string | null
+          framework: string
           id: string
           organization_id: string
           project_id: string
@@ -31,6 +32,7 @@ export type Database = {
           commit_sha?: string | null
           created_at?: string
           failure_reason?: string | null
+          framework?: string
           id?: string
           organization_id: string
           project_id: string
@@ -43,6 +45,7 @@ export type Database = {
           commit_sha?: string | null
           created_at?: string
           failure_reason?: string | null
+          framework?: string
           id?: string
           organization_id?: string
           project_id?: string

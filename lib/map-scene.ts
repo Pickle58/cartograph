@@ -1,4 +1,4 @@
-import { categoryOf, type FileCategory } from "@/lib/categories";
+import type { FileCategory } from "@/lib/categories";
 import { foldRepository, type FoldedDirectory } from "@/lib/fold";
 import { shortestUniqueLabels } from "@/lib/labels";
 import { layoutGraph } from "@/lib/layout";
@@ -20,6 +20,7 @@ export type MapFile = {
   path: string;
   folder: string;
   lines: number;
+  role: FileCategory;
 };
 
 export type MapLink = {
@@ -90,6 +91,15 @@ export function buildScene(
   selection: MapSelection | null,
   activeCategory: FileCategory | null = null,
 ): Scene {
+  const roleOf = new Map(files.map((file) => [file.path, file.role]));
+  const categoryAt = (filePath: string): FileCategory => {
+    const role = roleOf.get(filePath);
+    if (role === undefined) {
+      throw new Error(`No role for ${filePath}`);
+    }
+    return role;
+  };
+
   const fold = foldRepository(files);
   const home = new Map<string, string>();
   for (const directory of fold.directories) {
@@ -169,7 +179,7 @@ export function buildScene(
     const matchedCount =
       activeCategory === null
         ? null
-        : node.files.filter((path) => categoryOf(path) === activeCategory).length;
+        : node.files.filter((filePath) => categoryAt(filePath) === activeCategory).length;
     const nodeDimmed =
       (selection !== null && !focus.directories.has(node.directory)) ||
       matchedCount === 0;
@@ -190,11 +200,11 @@ export function buildScene(
       rows: node.shown.map((path) => ({
         path,
         label: labels.get(path) ?? path,
-        category: categoryOf(path),
+        category: categoryAt(path),
         selected: selection?.kind === "file" && selection.path === path,
         dimmed:
           nodeDimmed ||
-          (activeCategory !== null && categoryOf(path) !== activeCategory) ||
+          (activeCategory !== null && categoryAt(path) !== activeCategory) ||
           (selection !== null && !nodeSelected && !focus.files.has(path)),
       })),
     };
@@ -207,7 +217,7 @@ export function buildScene(
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
     tone:
-      activeCategory !== null && !edgeTouchesCategory(edge, activeCategory)
+      activeCategory !== null && !edgeTouchesCategory(edge, activeCategory, categoryAt)
         ? "dimmed"
         : toneOf(edge, selection),
   }));
@@ -389,10 +399,10 @@ function toneOf(edge: VisualEdge, selection: MapSelection | null): EdgeTone {
 function edgeTouchesCategory(
   edge: VisualEdge,
   category: FileCategory,
+  categoryAt: (filePath: string) => FileCategory,
 ): boolean {
   return edge.pairs.some(
-    (pair) =>
-      categoryOf(pair.source) === category || categoryOf(pair.target) === category,
+    (pair) => categoryAt(pair.source) === category || categoryAt(pair.target) === category,
   );
 }
 

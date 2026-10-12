@@ -1,4 +1,5 @@
 import "server-only";
+import { resolveRole } from "@/lib/categories";
 import { coverageOf, type Coverage } from "@/lib/coverage";
 import type { MapFile, MapLink } from "@/lib/map-scene";
 import { folderOf } from "@/parser/paths.mts";
@@ -11,10 +12,18 @@ import { createSupabaseClient } from "@/lib/supabase";
 
 export type { AnalysisStage, AnalysisStatus, AnalysisSummary };
 
+export type AnalysisRoute = {
+  file: string;
+  method: string;
+  pattern: string;
+};
+
 export type AnalysisGraph = {
   repository: string;
+  framework: string;
   files: MapFile[];
   links: MapLink[];
+  routes: AnalysisRoute[];
   coverage: Coverage;
 };
 
@@ -104,15 +113,57 @@ export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
     throw new Error(`Could not load edges: ${edgesError.message}`);
   }
 
+  const { data: roleRows, error: rolesError } = await supabase
+    .from("file_roles")
+    .select("file_id, role")
+    .eq("analysis_id", id);
+  if (rolesError) {
+    throw new Error(`Could not load roles: ${rolesError.message}`);
+  }
+
+  const { data: routeRows, error: routesError } = await supabase
+    .from("routes")
+    .select("file_id, method, path")
+    .eq("analysis_id", id);
+  if (routesError) {
+    throw new Error(`Could not load routes: ${routesError.message}`);
+  }
+
+  const { data: frameworkRow, error: frameworkError } = await supabase
+    .from("analyses")
+    .select("framework")
+    .eq("id", id)
+    .single();
+  if (frameworkError) {
+    throw new Error(`Could not load framework: ${frameworkError.message}`);
+  }
+
   const pathById = new Map<string, string>();
+  const assigned = new Map<string, string>();
+  for (const row of fileRows) {
+    if (row.skip_reason !== null) continue;
+    pathById.set(row.id, row.path);
+  }
+  for (const row of roleRows) {
+    const filePath = pathById.get(row.file_id);
+    if (filePath === undefined) {
+      throw new Error("A role points at a file that is not a parsed node");
+    }
+    assigned.set(filePath, row.role);
+  }
+
   const files: MapFile[] = [];
   for (const row of fileRows) {
     if (row.skip_reason !== null) continue;
     if (row.lines === null) {
       throw new Error(`Parsed file ${row.path} has no line count`);
     }
-    pathById.set(row.id, row.path);
-    files.push({ path: row.path, folder: folderOf(row.path), lines: row.lines });
+    files.push({
+      path: row.path,
+      folder: folderOf(row.path),
+      lines: row.lines,
+      role: resolveRole(row.path, assigned),
+    });
   }
 
   const links: MapLink[] = [];
@@ -125,10 +176,27 @@ export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
     links.push({ source, target });
   }
 
+  const routes: AnalysisRoute[] = [];
+  for (const row of routeRows) {
+    const file = pathById.get(row.file_id);
+    if (file === undefined) {
+      throw new Error("A route points at a file that is not a parsed node");
+    }
+    routes.push({ file, method: row.method, pattern: row.path });
+  }
+  routes.sort(
+    (a, b) =>
+      a.pattern.localeCompare(b.pattern) ||
+      a.method.localeCompare(b.method) ||
+      a.file.localeCompare(b.file),
+  );
+
   return {
     repository: analysis.repository,
+    framework: frameworkRow.framework,
     files,
     links,
+    routes,
     coverage: coverageOf(fileRows),
   };
 }
