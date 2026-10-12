@@ -21,6 +21,8 @@ export function MapShell({
   categories,
   files,
   links,
+  analysisId,
+  tracing,
 }: {
   name: string;
   framework: string;
@@ -31,6 +33,8 @@ export function MapShell({
   categories: readonly CategoryCount[];
   files: readonly MapFile[];
   links: readonly MapLink[];
+  analysisId: string;
+  tracing: boolean;
 }) {
   const detail = useMemo(
     () => repositoryDetail(files, links, frameworkId),
@@ -165,6 +169,8 @@ export function MapShell({
           selection={selection}
           tab={tab}
           onTab={setTab}
+          analysisId={analysisId}
+          tracing={tracing}
         />
       </div>
     </MapActionsProvider>

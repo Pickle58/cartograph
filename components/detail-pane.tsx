@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, type MouseEvent, type ReactNode } from "react";
+import { ExplanationPanel } from "@/components/explanation-panel";
 import { KindSwatch } from "@/components/kind-swatch";
 import { useMapActions } from "@/components/map-actions";
 import { categoryLabel, type FileCategory } from "@/lib/categories";
 import type { FileDetail, RepositoryDetail } from "@/lib/detail";
+import { explainTarget } from "@/lib/explain-actions";
+import { explainKey, type Explanation, type ExplainTarget } from "@/lib/explanation";
 import {
   INSIGHT_SENTENCES,
   walkGraph,
@@ -34,6 +37,8 @@ export function DetailPane({
   selection,
   tab,
   onTab,
+  analysisId,
+  tracing,
 }: {
   name: string;
   framework: string;
@@ -46,8 +51,14 @@ export function DetailPane({
   selection: MapSelection | null;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
+  analysisId: string;
+  tracing: boolean;
 }) {
   const { setHover } = useMapActions();
+  const [explained, setExplained] = useState<ReadonlyMap<string, Explanation>>(
+    () => new Map(),
+  );
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [walk, setWalk] = useState<{
     path: string;
     direction: WalkDirection;
@@ -76,9 +87,51 @@ export function DetailPane({
         onWalk={(path, direction) =>
           setWalk({ path, direction, paths: walkGraph(path, links, direction) })
         }
+        analysisId={analysisId}
+        explained={explained}
+        pendingKey={pendingKey}
+        onExplain={(target) => void runExplain(target)}
       />
+      {tracing ? null : (
+        <p className="shrink-0 border-t border-border px-3 py-1.5 text-[11px] text-muted">
+          Tracing is off. Set LANGSMITH_TRACING=true and LANGSMITH_API_KEY in .env.local, then restart.
+        </p>
+      )}
     </aside>
   );
+
+  function runExplain(target: ExplainTarget): void {
+    const key = explainKey(target);
+    setPendingKey(key);
+    void explainTarget(analysisId, target)
+      .then((result) => {
+        setExplained((current) => {
+          const previous = current.get(key);
+          const kept =
+            result.status === "stale" &&
+            result.body === null &&
+            previous !== undefined &&
+            previous.status !== "failed" &&
+            previous.body !== null
+              ? { ...result, body: previous.body }
+              : result;
+          const next = new Map(current);
+          next.set(key, kept);
+          return next;
+        });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Could not explain this.";
+        setExplained((current) => {
+          const next = new Map(current);
+          next.set(key, { status: "failed", message });
+          return next;
+        });
+      })
+      .finally(() => {
+        setPendingKey((current) => (current === key ? null : current));
+      });
+  }
 }
 
 function PaneBody({
@@ -94,6 +147,10 @@ function PaneBody({
   onTab,
   walk,
   onWalk,
+  analysisId,
+  explained,
+  pendingKey,
+  onExplain,
 }: {
   name: string;
   framework: string;
@@ -112,6 +169,10 @@ function PaneBody({
     paths: readonly string[];
   } | null;
   onWalk: (path: string, direction: WalkDirection) => void;
+  analysisId: string;
+  explained: ReadonlyMap<string, Explanation>;
+  pendingKey: string | null;
+  onExplain: (target: ExplainTarget) => void;
 }) {
   if (selection === null) {
     return (
@@ -135,6 +196,12 @@ function PaneBody({
           onTab={onTab}
           walk={walk?.path === selection.path ? walk : null}
           onWalk={onWalk}
+          analysisId={analysisId}
+          explained={explained}
+          pendingKey={pendingKey}
+          onExplain={onExplain}
+          paths={[...detail.files.keys()]}
+          directories={detail.directories.map((item) => item.directory)}
         />
       );
     case "node":
@@ -144,6 +211,12 @@ function PaneBody({
           detail={detail}
           tab={tab}
           onTab={onTab}
+          analysisId={analysisId}
+          explained={explained}
+          pendingKey={pendingKey}
+          onExplain={onExplain}
+          paths={[...detail.files.keys()]}
+          directories={detail.directories.map((item) => item.directory)}
         />
       );
     default: {
@@ -198,6 +271,12 @@ function FilePane({
   onTab,
   walk,
   onWalk,
+  analysisId,
+  explained,
+  pendingKey,
+  onExplain,
+  paths,
+  directories,
 }: {
   file: FileDetail;
   tab: DetailTab;
@@ -207,14 +286,31 @@ function FilePane({
     paths: readonly string[];
   } | null;
   onWalk: (path: string, direction: WalkDirection) => void;
+  analysisId: string;
+  explained: ReadonlyMap<string, Explanation>;
+  pendingKey: string | null;
+  onExplain: (target: ExplainTarget) => void;
+  paths: readonly string[];
+  directories: readonly string[];
 }) {
+  const target: ExplainTarget = { kind: "file", path: file.path };
   return (
     <>
       <div className="shrink-0 border-b border-border">
         <PathButton path={file.path} wrap />
       </div>
       <TabBar tab={tab} onTab={onTab} />
-      <TabBody tab={tab}>{fileTab(tab, file, walk, onWalk)}</TabBody>
+      <TabBody tab={tab}>
+        {fileTab(tab, file, walk, onWalk, {
+          analysisId,
+          target,
+          explained,
+          pendingKey,
+          onExplain,
+          paths,
+          directories,
+        })}
+      </TabBody>
     </>
   );
 }
@@ -224,11 +320,23 @@ function FolderPane({
   detail,
   tab,
   onTab,
+  analysisId,
+  explained,
+  pendingKey,
+  onExplain,
+  paths,
+  directories,
 }: {
   directory: string;
   detail: RepositoryDetail;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
+  analysisId: string;
+  explained: ReadonlyMap<string, Explanation>;
+  pendingKey: string | null;
+  onExplain: (target: ExplainTarget) => void;
+  paths: readonly string[];
+  directories: readonly string[];
 }) {
   const { hover } = useMapActions();
   const folder = detail.directories.find((item) => item.directory === directory);
@@ -246,7 +354,17 @@ function FolderPane({
         {folder.directory}
       </div>
       <TabBar tab={tab} onTab={onTab} />
-      <TabBody tab={tab}>{folderTab(tab, folder.kinds)}</TabBody>
+      <TabBody tab={tab}>
+        {folderTab(tab, folder.kinds, {
+          analysisId,
+          target: { kind: "folder", directory },
+          explained,
+          pendingKey,
+          onExplain,
+          paths,
+          directories,
+        })}
+      </TabBody>
     </>
   );
 }
@@ -307,6 +425,7 @@ function fileTab(
   file: FileDetail,
   walk: { direction: WalkDirection; paths: readonly string[] } | null,
   onWalk: (path: string, direction: WalkDirection) => void,
+  explanation: ExplanationProps,
 ): ReactNode {
   switch (tab) {
     case "structure":
@@ -325,7 +444,7 @@ function fileTab(
         </div>
       );
     case "explanation":
-      return <Explanation />;
+      return <ExplanationView {...explanation} />;
     default: {
       const unhandled: never = tab;
       throw new Error(`Unhandled detail tab: ${String(unhandled)}`);
@@ -402,9 +521,9 @@ function WalkButton({
 function RouteTable({ routes }: { routes: readonly ListedRoute[] }) {
   return (
     <section className="flex max-h-48 min-h-0 shrink-0 flex-col border-b border-border">
-      <div className="shrink-0 px-3 py-1.5 text-[12px]">Routes</div>
+      <div id="route-table-title" className="shrink-0 px-3 py-1.5 text-[12px]">Routes</div>
       <div className="map-file-list min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-left">
+        <table aria-labelledby="route-table-title" className="w-full border-collapse text-left">
           <thead className="text-[11px] text-muted">
             <tr>
               <th className="sticky top-0 w-[1%] bg-surface px-3 py-1 font-normal whitespace-nowrap">
@@ -472,7 +591,11 @@ function InsightsPanel({ insights }: { insights: readonly Insight[] }) {
   );
 }
 
-function folderTab(tab: DetailTab, kinds: RepositoryDetail["directories"][number]["kinds"]): ReactNode {
+function folderTab(
+  tab: DetailTab,
+  kinds: RepositoryDetail["directories"][number]["kinds"],
+  explanation: ExplanationProps,
+): ReactNode {
   switch (tab) {
     case "structure":
       return (
@@ -489,7 +612,7 @@ function folderTab(tab: DetailTab, kinds: RepositoryDetail["directories"][number
         </ul>
       );
     case "explanation":
-      return <Explanation />;
+      return <ExplanationView {...explanation} />;
     default: {
       const unhandled: never = tab;
       throw new Error(`Unhandled detail tab: ${String(unhandled)}`);
@@ -497,9 +620,35 @@ function folderTab(tab: DetailTab, kinds: RepositoryDetail["directories"][number
   }
 }
 
-function Explanation() {
+type ExplanationProps = {
+  analysisId: string;
+  target: ExplainTarget;
+  explained: ReadonlyMap<string, Explanation>;
+  pendingKey: string | null;
+  onExplain: (target: ExplainTarget) => void;
+  paths: readonly string[];
+  directories: readonly string[];
+};
+
+function ExplanationView({
+  analysisId,
+  target,
+  explained,
+  pendingKey,
+  onExplain,
+  paths,
+  directories,
+}: ExplanationProps) {
+  const key = explainKey(target);
   return (
-    <p className="px-3 py-2 text-[12px] text-muted">Nothing has explained this yet.</p>
+    <ExplanationPanel
+      analysisId={analysisId}
+      stored={explained.get(key) ?? null}
+      pending={pendingKey === key}
+      paths={paths}
+      directories={directories}
+      onExplain={() => onExplain(target)}
+    />
   );
 }
 

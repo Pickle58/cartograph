@@ -134,6 +134,7 @@ export type Database = {
         Row: {
           analysis_id: string
           body: string
+          content_hash: string
           created_at: string
           file_id: string
           id: string
@@ -143,6 +144,7 @@ export type Database = {
         Insert: {
           analysis_id: string
           body: string
+          content_hash: string
           created_at?: string
           file_id: string
           id?: string
@@ -152,6 +154,7 @@ export type Database = {
         Update: {
           analysis_id?: string
           body?: string
+          content_hash?: string
           created_at?: string
           file_id?: string
           id?: string
@@ -175,6 +178,44 @@ export type Database = {
           },
           {
             foreignKeyName: "explanations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_cache: {
+        Row: {
+          body: string
+          content_hash: string
+          created_at: string
+          id: string
+          kind: Database["public"]["Enums"]["ai_cache_kind"]
+          model: string
+          organization_id: string
+        }
+        Insert: {
+          body: string
+          content_hash: string
+          created_at?: string
+          id?: string
+          kind: Database["public"]["Enums"]["ai_cache_kind"]
+          model: string
+          organization_id: string
+        }
+        Update: {
+          body?: string
+          content_hash?: string
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["ai_cache_kind"]
+          model?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_cache_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -416,6 +457,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      ai_cache_kind: "file-explanation" | "folder-explanation" | "file-role"
       analysis_stage: "fetch" | "select" | "parse" | "store"
       analysis_status: "queued" | "running" | "complete" | "failed"
       file_role_source: "convention" | "ai"
@@ -547,6 +589,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_cache_kind: ["file-explanation", "folder-explanation", "file-role"],
       analysis_stage: ["fetch", "select", "parse", "store"],
       analysis_status: ["queued", "running", "complete", "failed"],
       file_role_source: ["convention", "ai"],

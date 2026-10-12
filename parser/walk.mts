@@ -14,6 +14,9 @@ const SOURCE_EXTENSIONS = new Set([
   ".cts",
   ".mjs",
   ".cjs",
+  // The script inside an Astro file is TypeScript. This walk does not decide
+  // whether that file is a page, a layout, or an endpoint.
+  ".astro",
 ]);
 
 // These are not a framework's layout. Installed packages and the version

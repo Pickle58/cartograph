@@ -4,6 +4,7 @@ import path from "node:path";
 import { Node, Project, SyntaxKind, type SourceFile, ts } from "ts-morph";
 
 import { type FrameworkAdapter, noFramework } from "./adapter.mts";
+import { UNCLOSED_FRONTMATTER, astroScript } from "./astro-script.mts";
 import { connect } from "./graph.mts";
 import { isRoleId } from "./roles.mts";
 import {
@@ -70,14 +71,28 @@ export function parseWalked(
       skipped.push(skip);
       continue;
     }
+    const astro = path.posix.extname(source.path).toLowerCase() === ".astro";
+    let sourceText = text;
+    if (astro) {
+      const extracted = astroScript(text);
+      if (!extracted.closed) {
+        skipped.push(skipFile(source, UNCLOSED_FRONTMATTER));
+        continue;
+      }
+      sourceText = extracted.script;
+    }
     let file: SourceFile;
     try {
       // createSourceFile refuses a path that already exists on disk. These
       // files do. overwrite replaces the in-memory tree and does not write
-      // the file back.
-      file = project.createSourceFile(source.absolutePath, text, {
-        overwrite: true,
-      });
+      // the file back. An .astro path is not a TypeScript extension, so the
+      // script is parsed as TypeScript explicitly. The hash and the line
+      // count stay on the whole file.
+      file = project.createSourceFile(
+        source.absolutePath,
+        sourceText,
+        astro ? { overwrite: true, scriptKind: ts.ScriptKind.TS } : { overwrite: true },
+      );
     } catch (error) {
       const skip = skipFile(source, `parser failed: ${errorMessage(error)}`);
       skipped.push(skip);
@@ -218,8 +233,8 @@ function seenImports(
       literal: true,
     });
   }
-  // require() is a later phase. A type-position import("x").T is not a
-  // dynamic import. Only a call of the form import("...") is.
+  // A type-position import("x").T is not a dynamic import. Only a call of
+  // the form import("...") is.
   for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     if (call.getExpression().getKind() !== SyntaxKind.ImportKeyword) continue;
     const argument = call.getArguments()[0];
@@ -243,7 +258,47 @@ function seenImports(
       literal: false,
     });
   }
+  // require("./x") and import x = require("./x"). A non-literal argument has
+  // no specifier, so it is not reported. module.exports = require("./x") is
+  // that same call, not a second edge.
+  const required = new Set<string>();
+  for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const expression = call.getExpression();
+    if (!Node.isIdentifier(expression) || expression.getText() !== "require") continue;
+    const literal = stringLiteral(call.getArguments()[0]);
+    if (literal === undefined || required.has(literal.text)) continue;
+    required.add(literal.text);
+    seen.push({
+      kind: "require",
+      specifier: literal.text,
+      mode: resolutionMode(file, literal.node, compilerOptions),
+      literal: true,
+    });
+  }
+  for (const declaration of file.getDescendantsOfKind(SyntaxKind.ImportEqualsDeclaration)) {
+    const reference = declaration.getModuleReference();
+    if (!Node.isExternalModuleReference(reference)) continue;
+    const literal = stringLiteral(reference.getExpression());
+    if (literal === undefined || required.has(literal.text)) continue;
+    required.add(literal.text);
+    seen.push({
+      kind: "require",
+      specifier: literal.text,
+      mode: resolutionMode(file, literal.node, compilerOptions),
+      literal: true,
+    });
+  }
   return seen;
+}
+
+function stringLiteral(
+  node: Node | undefined,
+): { text: string; node: ts.StringLiteralLike } | undefined {
+  if (node === undefined) return undefined;
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return { text: node.getLiteralValue(), node: node.compilerNode };
+  }
+  return undefined;
 }
 
 function resolutionMode(

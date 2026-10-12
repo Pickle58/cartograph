@@ -81,6 +81,11 @@ function controllerRoutes(file: AdapterFile, prefix: string): AdapterRoute[] {
   for (const declaration of file.source.getClasses()) {
     const controller = nestDecorator(file.source, declaration.getDecorators(), "Controller");
     if (controller === undefined) continue;
+    // Versioning rewrites the URL, and the rewritten pattern is not in the
+    // decorator. The controller is omitted, the same as a versioned method.
+    if (nestDecorator(file.source, declaration.getDecorators(), "Version") !== undefined) {
+      continue;
+    }
     const prefixes = literalPaths(controller);
     if (prefixes === undefined) continue;
     for (const method of declaration.getMethods()) {

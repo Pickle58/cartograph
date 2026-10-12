@@ -25,6 +25,8 @@ function report(result: ParseResult): void {
   const resolutions = countResolutions(result.imports);
   const reexports = result.imports.filter((record) => record.kind === "re-export");
   const reexportResolutions = countResolutions(reexports);
+  const requires = result.imports.filter((record) => record.kind === "require");
+  const requireResolutions = countResolutions(requires);
 
   console.log(`framework: ${result.framework}`);
   console.log(`files found: ${found}`);
@@ -54,6 +56,11 @@ function report(result: ParseResult): void {
   console.log(`re-exports outside: ${reexportResolutions.outside}`);
   console.log(`re-exports excluded: ${reexportResolutions.excluded}`);
   console.log(`re-exports unresolved: ${reexportResolutions.unresolved}`);
+  console.log(`requires found: ${requires.length}`);
+  console.log(`requires resolved: ${requireResolutions.resolved}`);
+  console.log(`requires outside: ${requireResolutions.outside}`);
+  console.log(`requires excluded: ${requireResolutions.excluded}`);
+  console.log(`requires unresolved: ${requireResolutions.unresolved}`);
 
   if (found !== result.files.length + result.skipped.length) {
     throw new Error("files found is not parsed plus skipped");
@@ -64,6 +71,13 @@ function report(result: ParseResult): void {
     reexportResolutions.unresolved;
   if (reexportResolutions.resolved + reexportGaps !== reexports.length) {
     throw new Error("re-export outcomes do not add up");
+  }
+  const requireGaps =
+    requireResolutions.outside +
+    requireResolutions.excluded +
+    requireResolutions.unresolved;
+  if (requireResolutions.resolved + requireGaps !== requires.length) {
+    throw new Error("require outcomes do not add up");
   }
 
   console.log("skip reasons:");

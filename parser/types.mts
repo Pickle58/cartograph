@@ -2,7 +2,7 @@ import { isRoleId } from "./roles.mts";
 
 export type ModuleKind = "module" | "script";
 
-export type ImportKind = "import" | "re-export" | "dynamic-import";
+export type ImportKind = "import" | "re-export" | "dynamic-import" | "require";
 
 export type ParsedFile = {
   path: string;
@@ -87,6 +87,7 @@ const IMPORT_KINDS: readonly ImportKind[] = [
   "import",
   "re-export",
   "dynamic-import",
+  "require",
 ];
 
 const MODULE_KINDS: readonly ModuleKind[] = ["module", "script"];
