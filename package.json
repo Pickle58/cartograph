@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "parse": "node parser/cli.mts",
-    "analyze": "node --env-file=.env.local scripts/run-analysis.mts"
+    "analyze": "node scripts/run-analysis.mts",
+    "eval:paths": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=LANGSMITH_DEPRECATED_LIST_RUNS --disable-warning=LANGSMITH_DEPRECATED_READ_RUN scripts/eval-invented-paths.mts",
+    "eval:roles": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-roles.mts",
+    "eval:prompts": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-prompts.mts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.13",

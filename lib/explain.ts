@@ -6,6 +6,13 @@ import { readCache, writeCache } from "@/lib/ai-cache";
 import { categoryLabel, resolveRole } from "@/lib/categories";
 import { sha256 } from "@/lib/content-hash";
 import type { Explanation, ExplainTarget } from "@/lib/explanation";
+import {
+  fileExplanation,
+  folderExplanation,
+  pathsListedInPrompt,
+  SOURCE_EXCERPT,
+  type ExplanationNeighbour,
+} from "@/lib/explanation-prompt";
 import { foldRepository } from "@/lib/fold";
 import {
   fetchHeadCommit,
@@ -15,10 +22,6 @@ import {
 import { getActiveOrganization } from "@/lib/organization";
 import { createSupabaseClient } from "@/lib/supabase";
 import type { Database } from "@/types/database";
-
-const SOURCE_EXCERPT = 12_000;
-
-const FORMATTING = `You may format the reply with \`inline code\`, **bold**, and lines that start with "- ". No headings, no code fences, no links, no tables, no numbered lists.`;
 
 type CacheClient = SupabaseClient<Database>;
 
@@ -84,33 +87,38 @@ async function explainFile(analysisId: string, filePath: string): Promise<Explan
   }
 
   const source = decodeUtf8(bytes);
-  const body = await traced("explain-file", async () => {
+  const labelled = {
+    imports: labelledNeighbours(neighbours.imports, neighbours.roles),
+    importedBy: labelledNeighbours(neighbours.importedBy, neighbours.roles),
+  };
+  const tracedResult = await traced("explain-file", async () => {
+    // v1 left out the file path and each neighbour's role, so those entries
+    // stay unread. The role is part of the prompt the same way the path is.
     const cacheKey = sha256([
       [
-        `file-explanation-v1-${SOURCE_EXCERPT}`,
+        `file-explanation-v2-${SOURCE_EXCERPT}`,
+        filePath,
         contentHash,
         "imports",
-        ...neighbours.imports,
+        ...neighbourCacheKeys(neighbours.imports, neighbours.roles),
         "imported-by",
-        ...neighbours.importedBy,
+        ...neighbourCacheKeys(neighbours.importedBy, neighbours.roles),
       ].join("\n"),
     ]);
     const hit = await readCache(supabase, "file-explanation", cacheKey);
-    const text =
-      hit ??
-      (await completeText(
-        `You explain one file a parser has already mapped. You do not decide which files are connected, and you do not invent files. Use only the file and the neighbours below. ${FORMATTING}`,
-        filePrompt(filePath, source, neighbours),
-        800,
-      ));
+    const prompt = fileExplanation(filePath, source, labelled);
+    // The live invented-path check scores this set. It is the paths the prompt
+    // listed, taken from the prompt text, not a second copy that can drift.
+    const shownPaths = pathsListedInPrompt(prompt.user);
+    const text = hit ?? (await completeText(prompt.system, prompt.user, 800));
     if (hit === null) {
       await writeCache(supabase, organizationId, "file-explanation", cacheKey, text);
     }
     await rememberExplanation(supabase, organizationId, analysisId, file.id, text, contentHash);
-    return text;
+    return { explanation: text, shownPaths };
   });
 
-  return { status: "ready", body };
+  return { status: "ready", body: tracedResult.explanation };
 }
 
 async function explainFolder(
@@ -156,7 +164,7 @@ async function explainFolder(
         compareText(left.source, right.source) || compareText(left.target, right.target),
     );
 
-  const body = await traced("explain-folder", async () => {
+  const tracedResult = await traced("explain-folder", async () => {
     const cacheKey = sha256([
       [
         "folder-explanation-v1",
@@ -167,80 +175,33 @@ async function explainFolder(
       ].join("\n"),
     ]);
     const hit = await readCache(supabase, "folder-explanation", cacheKey);
-    const text =
-      hit ??
-      (await completeText(
-        `You explain one folder, not a single file inside it. You do not decide which files are connected, and you do not invent files. Use only the files and the imports below. ${FORMATTING}`,
-        folderPrompt(directory, files, inbound),
-        800,
-      ));
+    const prompt = folderExplanation(directory, files, inbound);
+    const shownPaths = pathsListedInPrompt(prompt.user);
+    const text = hit ?? (await completeText(prompt.system, prompt.user, 800));
     if (hit === null) {
       await writeCache(supabase, organizationId, "folder-explanation", cacheKey, text);
     }
-    return text;
+    return { explanation: text, shownPaths };
   });
 
-  return { status: "ready", body };
+  return { status: "ready", body: tracedResult.explanation };
 }
 
-function filePrompt(
-  filePath: string,
-  source: string,
-  neighbours: {
-    imports: readonly string[];
-    importedBy: readonly string[];
-    roles: ReadonlyMap<string, string>;
-  },
-): string {
-  const excerpt =
-    source.length <= SOURCE_EXCERPT
-      ? source
-      : `${source.slice(0, SOURCE_EXCERPT)}\n\n[${source.length - SOURCE_EXCERPT} characters omitted]`;
-  return [
-    "Explain this file in a short paragraph. Say what it does given the files it imports and the files that import it. Name a neighbour when it matters. Do not name any file that is not listed.",
-    "",
-    `File: ${filePath}`,
-    "",
-    "Imports:",
-    neighbourLines(neighbours.imports, neighbours.roles),
-    "",
-    "Imported by:",
-    neighbourLines(neighbours.importedBy, neighbours.roles),
-    "",
-    "Source:",
-    excerpt,
-  ].join("\n");
+function labelledNeighbours(
+  paths: readonly string[],
+  roles: ReadonlyMap<string, string>,
+): ExplanationNeighbour[] {
+  return paths.map((filePath) => ({
+    path: filePath,
+    role: roles.get(filePath) ?? "unidentified",
+  }));
 }
 
-function folderPrompt(
-  directory: string,
-  files: readonly { path: string; role: string }[],
-  inbound: readonly { source: string; target: string }[],
-): string {
-  const fileLines =
-    files.length === 0
-      ? "None."
-      : files.map((file) => `- ${file.path} (${file.role})`).join("\n");
-  const inboundLines =
-    inbound.length === 0
-      ? "Nothing outside this folder imports these files."
-      : inbound.map((edge) => `- ${edge.source} imports ${edge.target}`).join("\n");
-  return [
-    "Explain this folder. Say what is in it, and why files outside it import the files inside it. Do not summarise one file and call that the folder. Do not name any file that is not listed.",
-    "",
-    `Folder: ${directory}`,
-    "",
-    "Files in this folder:",
-    fileLines,
-    "",
-    "Imported from outside:",
-    inboundLines,
-  ].join("\n");
-}
-
-function neighbourLines(paths: readonly string[], roles: ReadonlyMap<string, string>): string {
-  if (paths.length === 0) return "None.";
-  return paths.map((filePath) => `- ${filePath} (${roles.get(filePath) ?? "unidentified"})`).join("\n");
+function neighbourCacheKeys(
+  paths: readonly string[],
+  roles: ReadonlyMap<string, string>,
+): string[] {
+  return paths.map((filePath) => `${filePath}\0${roles.get(filePath) ?? "unidentified"}`);
 }
 
 async function loadAnalysis(analysisId: string): Promise<

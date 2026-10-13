@@ -7,15 +7,21 @@ import { completeJson, missingModelKey, modelConfigured, traced } from "@/lib/ai
 import { readCache, writeCache } from "@/lib/ai-cache";
 import { needsModelRole } from "@/lib/categories";
 import { sha256 } from "@/lib/content-hash";
+import {
+  parseAssignments,
+  ROLE_BATCH,
+  ROLE_EXCERPT,
+  ROLE_SCHEMA,
+  roleSystemPrompt,
+  roleUserPrompt,
+  sourceExcerpt,
+} from "@/lib/role-prompt";
 import { fetchRepositoryAtCommit } from "@/lib/github";
 import { getActiveOrganization } from "@/lib/organization";
 import { createSupabaseClient } from "@/lib/supabase";
 import { isInsideRoot } from "@/parser/paths.mts";
-import { isModelRole, MODEL_ROLE_IDS } from "@/parser/roles.mts";
+import { isModelRole } from "@/parser/roles.mts";
 import type { Database } from "@/types/database";
-
-const ROLE_EXCERPT = 2_000;
-const BATCH = 8;
 
 type CacheClient = SupabaseClient<Database>;
 
@@ -25,61 +31,125 @@ type LabelFile = {
   bytes: Buffer;
 };
 
-const ROLE_SCHEMA: { [key: string]: unknown } = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    assignments: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          path: { type: "string" },
-          role: { type: "string", enum: [...MODEL_ROLE_IDS] },
-        },
-        required: ["path", "role"],
-      },
-    },
-  },
-  required: ["assignments"],
-};
-
-// Files still unidentified after adapters and path convention. Runs before the
-// map is shown, so a role does not appear on its own after the page has rendered.
+// Files still unidentified after adapters and path convention. The parse calls
+// this once, before the analysis is marked complete, so the map opens with the
+// roles already stored. A result that was stored without that step (the
+// command-line run, or a row from before this existed) is labelled on the first
+// view, and the attempt is recorded either way so a later view does not
+// download the repository again.
 export async function labelUnidentifiedAnalysis(analysisId: string): Promise<string | null> {
   try {
     const analysis = await getAnalysis(analysisId);
-    if (analysis === null || analysis.commitSha === null) return null;
+    if (analysis === null || analysis.labelingAttempted) return analysis?.labelingNote ?? null;
     const supabase = await createSupabaseClient();
-    const organization = await getActiveOrganization();
+    if (analysis.commitSha === null) {
+      await recordLabelingAttempt(supabase, analysisId, null);
+      return null;
+    }
     const files = await selectParsedFiles(supabase, analysisId);
     const assigned = await selectAssignedPaths(supabase, analysisId, files);
     const candidates = files.filter((file) => needsModelRole(file.path, assigned));
-    if (candidates.length === 0) return null;
-    if (!modelConfigured()) {
-      return `Unidentified files were not labelled. ${missingModelKey()}`;
+    if (candidates.length === 0) {
+      await recordLabelingAttempt(supabase, analysisId, null);
+      return null;
     }
-
+    if (!modelConfigured()) {
+      const note = labelingNote(new Error(missingModelKey()));
+      await recordLabelingAttempt(supabase, analysisId, note);
+      return note;
+    }
+    const organization = await getActiveOrganization();
     const fetched = await fetchRepositoryAtCommit(analysis.repository, analysis.commitSha);
     try {
-      const labeled = await filesOnDisk(fetched.directory, candidates);
-      const unlabeled = await assignRoles(
+      return await labelUnidentifiedFiles(
         supabase,
         organization.id,
         analysisId,
-        labeled,
+        fetched.directory,
       );
-      if (unlabeled === 0) return null;
-      const noun = unlabeled === 1 ? "file was" : "files were";
-      return `${unlabeled} unidentified ${noun} not labelled: the model did not return a permitted role.`;
     } finally {
       await fetched.cleanup();
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not label unidentified files.";
-    return `Unidentified files were not labelled. ${message}`;
+    const note = labelingNote(error);
+    try {
+      const supabase = await createSupabaseClient();
+      await recordLabelingAttempt(supabase, analysisId, note);
+    } catch {
+      // The marker did not stick, so the next view can try again.
+    }
+    return note;
   }
+}
+
+export async function labelUnidentifiedFiles(
+  supabase: CacheClient,
+  organizationId: string,
+  analysisId: string,
+  directory: string,
+): Promise<string | null> {
+  try {
+    const note = await labelFromDirectory(supabase, organizationId, analysisId, directory);
+    await recordLabelingAttempt(supabase, analysisId, note);
+    return note;
+  } catch (error) {
+    const note = labelingNote(error);
+    await recordLabelingAttempt(supabase, analysisId, note);
+    return note;
+  }
+}
+
+async function labelFromDirectory(
+  supabase: CacheClient,
+  organizationId: string,
+  analysisId: string,
+  directory: string,
+): Promise<string | null> {
+  const files = await selectParsedFiles(supabase, analysisId);
+  const assigned = await selectAssignedPaths(supabase, analysisId, files);
+  const candidates = files.filter((file) => needsModelRole(file.path, assigned));
+  if (candidates.length === 0) return null;
+  if (!modelConfigured()) {
+    return labelingNote(new Error(missingModelKey()));
+  }
+
+  const labeled = await filesOnDisk(directory, candidates);
+  const unlabeled = await assignRoles(supabase, organizationId, analysisId, labeled);
+  return unlabeledNote(unlabeled);
+}
+
+function labelingNote(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Could not label unidentified files.";
+  if (message.startsWith("Unidentified files were not labelled.")) return message;
+  return `Unidentified files were not labelled. ${message}`;
+}
+
+async function recordLabelingAttempt(
+  supabase: CacheClient,
+  analysisId: string,
+  note: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("analyses")
+    .update({ labeling_attempted: true, labeling_note: note })
+    .eq("id", analysisId);
+  if (error) throw new Error(`Could not record labelling: ${error.message}`);
+}
+
+type Unlabeled = { refused: number; unreadable: number };
+
+function unlabeledNote(counts: Unlabeled): string | null {
+  const total = counts.refused + counts.unreadable;
+  if (total === 0) return null;
+  const noun = total === 1 ? "file was" : "files were";
+  if (counts.unreadable === 0) {
+    return `${total} unidentified ${noun} not labelled: the model did not return a permitted role.`;
+  }
+  if (counts.refused === 0) {
+    const reason = total === 1 ? "it is not valid UTF-8" : "they are not valid UTF-8";
+    return `${total} unidentified ${noun} not labelled: ${reason}.`;
+  }
+  return `${total} unidentified ${noun} not labelled.`;
 }
 
 async function assignRoles(
@@ -87,11 +157,13 @@ async function assignRoles(
   organizationId: string,
   analysisId: string,
   files: readonly LabelFile[],
-): Promise<number> {
-  let unlabeled = 0;
-  for (let index = 0; index < files.length; index += BATCH) {
-    const batch = files.slice(index, index + BATCH);
-    unlabeled += await assignBatch(supabase, organizationId, analysisId, batch);
+): Promise<Unlabeled> {
+  const unlabeled: Unlabeled = { refused: 0, unreadable: 0 };
+  for (let index = 0; index < files.length; index += ROLE_BATCH) {
+    const batch = files.slice(index, index + ROLE_BATCH);
+    const counts = await assignBatch(supabase, organizationId, analysisId, batch);
+    unlabeled.refused += counts.refused;
+    unlabeled.unreadable += counts.unreadable;
   }
   return unlabeled;
 }
@@ -101,33 +173,43 @@ async function assignBatch(
   organizationId: string,
   analysisId: string,
   files: readonly LabelFile[],
-): Promise<number> {
+): Promise<Unlabeled> {
   return traced("classify-files", async () => {
-    const pending: (LabelFile & { key: string })[] = [];
+    const pending: (LabelFile & { key: string; source: string })[] = [];
+    const unlabeled: Unlabeled = { refused: 0, unreadable: 0 };
     for (const file of files) {
-      const key = sha256([Buffer.from(`file-role-v1-${ROLE_EXCERPT}\n`), file.bytes]);
+      const source = sourceExcerpt(file.bytes);
+      if (source === null) {
+        unlabeled.unreadable += 1;
+        continue;
+      }
+      // The role is chosen from the path and the source. v1 hashed the bytes
+      // only, so those entries stay unread.
+      const key = sha256([
+        Buffer.from(`file-role-v2-${ROLE_EXCERPT}\0${file.path}\0`),
+        file.bytes,
+      ]);
       const hit = await readCache(supabase, "file-role", key);
       if (hit !== null && isModelRole(hit)) {
         await rememberRole(supabase, organizationId, analysisId, file.id, hit);
         continue;
       }
-      pending.push({ ...file, key });
+      pending.push({ ...file, key, source });
     }
-    if (pending.length === 0) return 0;
+    if (pending.length === 0) return unlabeled;
 
     const text = await completeJson(
-      `You label source files. For each file, choose one role. The only roles are: ${MODEL_ROLE_IDS.join(", ")}. Never use page, route, controller, or any other role. Use only the path and the source you are shown. Do not invent files.`,
-      rolePrompt(pending),
+      roleSystemPrompt(),
+      roleUserPrompt(pending),
       ROLE_SCHEMA,
       1500,
     );
     const assignments = parseAssignments(text);
     const pendingPaths = new Set(pending.map((file) => file.path));
-    let unlabeled = 0;
     for (const file of pending) {
       const role = assignments.get(file.path);
       if (role === undefined || !pendingPaths.has(file.path) || !isModelRole(role)) {
-        unlabeled += 1;
+        unlabeled.refused += 1;
         continue;
       }
       await writeCache(supabase, organizationId, "file-role", file.key, role);
@@ -135,44 +217,6 @@ async function assignBatch(
     }
     return unlabeled;
   });
-}
-
-function rolePrompt(files: readonly LabelFile[]): string {
-  return files
-    .map((file) => {
-      const text = decodeUtf8(file.bytes);
-      const source =
-        text.length <= ROLE_EXCERPT
-          ? text
-          : `${text.slice(0, ROLE_EXCERPT)}\n[${text.length - ROLE_EXCERPT} characters omitted]`;
-      return `File: ${file.path}\n${source}`;
-    })
-    .join("\n\n");
-}
-
-function parseAssignments(text: string): Map<string, string> {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new Error("The model did not return JSON.");
-  }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("assignments" in value) ||
-    !Array.isArray(value.assignments)
-  ) {
-    throw new Error("The model did not return role assignments.");
-  }
-  const roles = new Map<string, string>();
-  for (const entry of value.assignments) {
-    if (typeof entry !== "object" || entry === null) continue;
-    if (!("path" in entry) || !("role" in entry)) continue;
-    if (typeof entry.path !== "string" || typeof entry.role !== "string") continue;
-    roles.set(entry.path, entry.role);
-  }
-  return roles;
 }
 
 async function rememberRole(
@@ -271,10 +315,3 @@ async function readRepoFile(root: string, repoPath: string): Promise<Buffer> {
   return fs.readFile(absolute);
 }
 
-function decodeUtf8(bytes: Buffer): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error("A file to label is not valid UTF-8.");
-  }
-}

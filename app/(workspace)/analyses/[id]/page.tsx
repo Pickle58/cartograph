@@ -36,7 +36,10 @@ async function Analysis({
     return <ProgressView analysis={analysis} />;
   }
 
-  const labelingError = await labelUnidentifiedAnalysis(id);
+  // Already labelled during the run. Otherwise this is the one attempt.
+  const labelingError = analysis.labelingAttempted
+    ? analysis.labelingNote
+    : await labelUnidentifiedAnalysis(id);
   const graph = await getAnalysisGraph(id);
   const categories = categoryCounts(graph.files, graph.framework);
 

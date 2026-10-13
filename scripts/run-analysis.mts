@@ -1,7 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 import { startAnalysis, type AnalysisRun } from "../lib/pipeline.ts";
+import { loadScriptEnv } from "../lib/script-env.ts";
 import type { Database } from "../types/database.ts";
+
+loadScriptEnv();
 
 const [repositoryUrl, organizationId] = process.argv.slice(2);
 
