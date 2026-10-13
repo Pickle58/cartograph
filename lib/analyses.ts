@@ -62,6 +62,8 @@ export async function listAnalyses(): Promise<AnalysisSummary[]> {
 
 type StoredAnalysis = AnalysisSummary & {
   framework: string;
+  labelingAttempted: boolean;
+  labelingNote: string | null;
 };
 
 export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
@@ -70,7 +72,7 @@ export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
   const { data, error } = await supabase
     .from("analyses")
     .select(
-      "id, status, stage, stage_message, commit_sha, failure_reason, framework, created_at, updated_at, project:projects!inner(repository)",
+      "id, status, stage, stage_message, commit_sha, failure_reason, framework, labeling_attempted, labeling_note, created_at, updated_at, project:projects!inner(repository)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -89,6 +91,8 @@ export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
     commitSha: data.commit_sha,
     failureReason: data.failure_reason,
     framework: data.framework,
+    labelingAttempted: data.labeling_attempted,
+    labelingNote: data.labeling_note,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };

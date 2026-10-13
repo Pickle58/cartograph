@@ -21,6 +21,8 @@ export type Database = {
           failure_reason: string | null
           framework: string
           id: string
+          labeling_attempted: boolean
+          labeling_note: string | null
           organization_id: string
           project_id: string
           stage: Database["public"]["Enums"]["analysis_stage"] | null
@@ -34,6 +36,8 @@ export type Database = {
           failure_reason?: string | null
           framework?: string
           id?: string
+          labeling_attempted?: boolean
+          labeling_note?: string | null
           organization_id: string
           project_id: string
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
@@ -47,6 +51,8 @@ export type Database = {
           failure_reason?: string | null
           framework?: string
           id?: string
+          labeling_attempted?: boolean
+          labeling_note?: string | null
           organization_id?: string
           project_id?: string
           stage?: Database["public"]["Enums"]["analysis_stage"] | null
@@ -454,7 +460,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      replace_analysis: {
+        Args: {
+          next_stage_message: string
+          target_id: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       ai_cache_kind: "file-explanation" | "folder-explanation" | "file-role"

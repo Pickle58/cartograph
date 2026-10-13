@@ -73,6 +73,7 @@ export async function createAnalysis(
 export async function runAnalysis(
   supabase: AnalysisClient,
   analysis: { id: string; organizationId: string; repositoryUrl: string },
+  labelFiles?: (directory: string) => Promise<void>,
 ): Promise<AnalysisRun> {
   let stage: AnalysisStage = "fetch";
   let fetched: Awaited<ReturnType<typeof fetchPublicRepository>> | undefined;
@@ -96,6 +97,16 @@ export async function runAnalysis(
     stage = "store";
     await setStage(supabase, analysis.id, stage);
     await storeParseResult(supabase, analysis.id, analysis.organizationId, parsed);
+
+    // Labelling uses the checkout this run already downloaded. A failure here
+    // is recorded on the row and does not discard the parse.
+    if (labelFiles !== undefined) {
+      try {
+        await labelFiles(fetched.directory);
+      } catch {
+        // The labeler records its own note when it can. The map still opens.
+      }
+    }
 
     await write(supabase, analysis.id, {
       status: "complete",
@@ -229,6 +240,37 @@ export async function storeParseResult(
       throw new Error(`Could not store routes: ${error.message}`);
     }
   }
+}
+
+// Deletes the stored analysis and inserts the replacement in one transaction.
+// createAnalysis cannot do this: the unique (organization, project) constraint
+// rejects a second row, and a delete that commits before the insert leaves
+// nothing behind when the insert fails. A running analysis is refused.
+export async function replaceAnalysis(
+  supabase: AnalysisClient,
+  analysisId: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("replace_analysis", {
+    target_id: analysisId,
+    next_stage_message: STAGE_MESSAGE.fetch,
+  });
+  if (error?.code === "23505") {
+    throw new Error(
+      "Could not replace the analysis because another analysis is already stored for this repository.",
+    );
+  }
+  if (error?.code === "P0001") {
+    throw new Error("This analysis is still running.");
+  }
+  if (error?.code === "P0002") {
+    throw new Error("Analysis not found.");
+  }
+  if (error || data === null) {
+    throw new Error(
+      `Could not replace the analysis: ${error?.message ?? "no row returned"}`,
+    );
+  }
+  return data;
 }
 
 async function findExistingAnalysis(

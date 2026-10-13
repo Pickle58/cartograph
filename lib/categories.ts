@@ -22,7 +22,7 @@ import {
   isModelRole,
   isRoleId,
   type RoleId,
-} from "@/parser/roles.mts";
+} from "../parser/roles.mts";
 
 export type FileCategory = RoleId;
 
