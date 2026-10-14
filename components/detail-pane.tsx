@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type MouseEvent, type ReactNode } from "react";
+import { AskPanel } from "@/components/ask-panel";
 import { ExplanationPanel } from "@/components/explanation-panel";
 import { KindSwatch } from "@/components/kind-swatch";
 import { useMapActions } from "@/components/map-actions";
@@ -18,6 +19,8 @@ import { filePathFrom, pathIsHighlighted, type HoverTarget } from "@/lib/hover";
 import type { MapLink, MapSelection } from "@/lib/map-scene";
 
 export type DetailTab = "structure" | "explanation";
+
+type PaneMode = "overview" | "ask";
 
 export type ListedRoute = {
   file: string;
@@ -55,6 +58,7 @@ export function DetailPane({
   tracing: boolean;
 }) {
   const { setHover } = useMapActions();
+  const [mode, setMode] = useState<PaneMode>("overview");
   const [explained, setExplained] = useState<ReadonlyMap<string, Explanation>>(
     () => new Map(),
   );
@@ -71,27 +75,51 @@ export function DetailPane({
       onMouseOver={(event) => hoverFromPane(event, setHover)}
       onMouseLeave={() => setHover(null)}
     >
-      <PaneBody
-        name={name}
-        framework={framework}
-        importCount={importCount}
-        routeCount={routeCount}
-        routes={routes}
-        detail={detail}
-        links={links}
-        insights={insights}
-        selection={selection}
-        tab={tab}
-        onTab={onTab}
-        walk={walk}
-        onWalk={(path, direction) =>
-          setWalk({ path, direction, paths: walkGraph(path, links, direction) })
-        }
-        analysisId={analysisId}
-        explained={explained}
-        pendingKey={pendingKey}
-        onExplain={(target) => void runExplain(target)}
-      />
+      <ModeTabs mode={mode} onMode={setMode} />
+      <div
+        role="tabpanel"
+        id="pane-mode-overview"
+        aria-labelledby="pane-tab-overview"
+        hidden={mode !== "overview"}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <PaneBody
+          name={name}
+          framework={framework}
+          importCount={importCount}
+          routeCount={routeCount}
+          routes={routes}
+          detail={detail}
+          links={links}
+          insights={insights}
+          selection={selection}
+          tab={tab}
+          onTab={onTab}
+          walk={walk}
+          onWalk={(path, direction) =>
+            setWalk({ path, direction, paths: walkGraph(path, links, direction) })
+          }
+          analysisId={analysisId}
+          explained={explained}
+          pendingKey={pendingKey}
+          onExplain={(target) => void runExplain(target)}
+        />
+      </div>
+      <div
+        role="tabpanel"
+        id="pane-mode-ask"
+        aria-labelledby="pane-tab-ask"
+        hidden={mode !== "ask"}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <AskPanel
+          key={analysisId}
+          analysisId={analysisId}
+          selection={selection}
+          paths={[...detail.files.keys()]}
+          directories={detail.directories.map((item) => item.directory)}
+        />
+      </div>
       {tracing ? null : (
         <p className="shrink-0 border-t border-border px-3 py-1.5 text-[11px] text-muted">
           Tracing is off. Set LANGSMITH_TRACING=true and LANGSMITH_API_KEY in .env.local, then restart.
@@ -366,6 +394,44 @@ function FolderPane({
         })}
       </TabBody>
     </>
+  );
+}
+
+function ModeTabs({ mode, onMode }: { mode: PaneMode; onMode: (mode: PaneMode) => void }) {
+  return (
+    <div role="tablist" aria-label="Pane" className="flex shrink-0 border-b border-border">
+      <ModeTab id="overview" label="Overview" mode={mode} onMode={onMode} />
+      <ModeTab id="ask" label="Ask" mode={mode} onMode={onMode} />
+    </div>
+  );
+}
+
+function ModeTab({
+  id,
+  label,
+  mode,
+  onMode,
+}: {
+  id: PaneMode;
+  label: string;
+  mode: PaneMode;
+  onMode: (mode: PaneMode) => void;
+}) {
+  const selected = mode === id;
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`pane-tab-${id}`}
+      aria-selected={selected}
+      aria-controls={`pane-mode-${id}`}
+      onClick={() => onMode(id)}
+      className={`border-b-2 px-3 py-1.5 text-[12px] ${
+        selected ? "border-accent text-fg" : "border-transparent text-muted"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

@@ -1,0 +1,23 @@
+{
+  "name": "cartograph-agent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check.ts"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^1.5.12",
+    "@langchain/core": "^1.2.17",
+    "langchain": "^1.5.16",
+    "managed-deepagents": "^0.9.2-dev.3",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.9.2"
+  }
+}

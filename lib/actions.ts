@@ -1,10 +1,11 @@
 "use server";
 
+import { auth } from "@clerk/nextjs/server";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { getAnalysis } from "@/lib/analyses";
 import { labelUnidentifiedFiles } from "@/lib/classify";
-import { RepositoryFetchError } from "@/lib/github";
+import { parseGithubRepository, RepositoryFetchError } from "@/lib/github";
 import { getActiveOrganization } from "@/lib/organization";
 import { createAnalysis, replaceAnalysis, runAnalysis } from "@/lib/pipeline";
 import { createSupabaseClient } from "@/lib/supabase";
@@ -13,7 +14,37 @@ export async function analyseRepository(
   _previous: { error: string } | null,
   formData: FormData,
 ): Promise<{ error: string } | null> {
+  return beginAnalysis(String(formData.get("url") ?? ""));
+}
+
+// The landing page is public. A bad URL is rejected here, before sign-in.
+// A valid one is carried on /start, named in redirect_url, because that is
+// what Clerk returns to after sign-in. The form body does not survive it.
+export async function submitRepository(
+  _previous: { error: string } | null,
+  formData: FormData,
+): Promise<{ error: string } | null> {
   const url = String(formData.get("url") ?? "");
+  try {
+    parseGithubRepository(url);
+  } catch (error) {
+    if (error instanceof RepositoryFetchError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+
+  const { userId } = await auth();
+  if (!userId) {
+    const next = `/start?url=${encodeURIComponent(url)}`;
+    redirect(`/sign-in?redirect_url=${encodeURIComponent(next)}`);
+  }
+  return beginAnalysis(url);
+}
+
+export async function beginAnalysis(
+  url: string,
+): Promise<{ error: string } | null> {
   const organization = await getActiveOrganization();
   const supabase = await createSupabaseClient();
 

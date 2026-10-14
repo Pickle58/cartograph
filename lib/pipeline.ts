@@ -103,8 +103,9 @@ export async function runAnalysis(
     if (labelFiles !== undefined) {
       try {
         await labelFiles(fetched.directory);
-      } catch {
+      } catch (error) {
         // The labeler records its own note when it can. The map still opens.
+        console.error(`Labelling failed for analysis ${analysis.id}:`, error);
       }
     }
 

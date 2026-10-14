@@ -1,12 +1,29 @@
+import { auth } from "@clerk/nextjs/server";
 import { Suspense } from "react";
 import { AnalysesTable } from "@/components/analyses-table";
 import { AnalyseForm } from "@/components/analyse-form";
+import { LandingPage } from "@/components/landing-page";
+import { WorkspaceFrame } from "@/components/workspace-frame";
 import { listAnalyses } from "@/lib/analyses";
 import { getActiveOrganization } from "@/lib/organization";
 
 export const maxDuration = 300;
 
-export default function DashboardPage() {
+// The whole page is either the landing page or the dashboard. That choice
+// needs the session, so there is no static shell to show first.
+export const instant = false;
+
+export default async function HomePage() {
+  const { userId } = await auth();
+  if (!userId) return <LandingPage />;
+  return (
+    <WorkspaceFrame>
+      <Dashboard />
+    </WorkspaceFrame>
+  );
+}
+
+function Dashboard() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <AnalyseForm />

@@ -284,7 +284,7 @@ function ruleRow(value: unknown): RuleRow[] {
   return [{ id, display_name: displayName }];
 }
 
-async function postJson(pathname: string, payload: { [key: string]: unknown }): Promise<{ [key: string]: unknown }> {
+async function postJson(pathname: string, payload: { [key: string]: unknown }): Promise<{ id?: string }> {
   const response = await fetch(`${langsmithEndpoint()}${pathname}`, {
     method: "POST",
     headers: langsmithHeaders(),
@@ -295,7 +295,7 @@ async function postJson(pathname: string, payload: { [key: string]: unknown }): 
     throw new Error(`Could not create the live evaluator (${response.status}): ${JSON.stringify(body)}`);
   }
   if (typeof body !== "object" || body === null) return {};
-  return body as { [key: string]: unknown };
+  return "id" in body && typeof body.id === "string" ? { id: body.id } : {};
 }
 
 function percent(correct: number, total: number): string {

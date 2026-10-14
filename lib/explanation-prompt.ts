@@ -38,9 +38,12 @@ export function folderExplanation(
   };
 }
 
+const INBOUND_HEADING = "Imported from outside:";
+
 // Paths named in the prompt, and not paths that merely occur inside the source
 // excerpt. The excerpt starts at the Source: line and is not part of the set
-// the model was told it may name.
+// the model was told it may name. An "imports" edge is only real under the
+// inbound heading; a file bullet can contain that word and is still one path.
 export function pathsListedInPrompt(prompt: string): string[] {
   const paths: string[] = [];
   const seen = new Set<string>();
@@ -49,8 +52,17 @@ export function pathsListedInPrompt(prompt: string): string[] {
     seen.add(value);
     paths.push(value);
   };
+  let inbound = false;
   for (const line of prompt.split("\n")) {
     if (line === "Source:") break;
+    if (line === INBOUND_HEADING) {
+      inbound = true;
+      continue;
+    }
+    if (line.endsWith(":") && !line.startsWith("File: ") && !line.startsWith("Folder: ")) {
+      inbound = false;
+      continue;
+    }
     const file = /^File: (.+)$/.exec(line);
     if (file?.[1] !== undefined) {
       add(file[1]);
@@ -58,11 +70,13 @@ export function pathsListedInPrompt(prompt: string): string[] {
     }
     const bullet = /^- (.+)$/.exec(line);
     if (bullet?.[1] === undefined) continue;
-    const imports = /^(.+) imports (.+)$/.exec(bullet[1]);
-    if (imports?.[1] !== undefined && imports[2] !== undefined) {
-      add(imports[1]);
-      add(imports[2]);
-      continue;
+    if (inbound) {
+      const imports = /^(.+) imports (.+)$/.exec(bullet[1]);
+      if (imports?.[1] !== undefined && imports[2] !== undefined) {
+        add(imports[1]);
+        add(imports[2]);
+        continue;
+      }
     }
     const role = /^(.+) \([^)]+\)$/.exec(bullet[1]);
     add(role?.[1] ?? bullet[1]);
@@ -114,7 +128,7 @@ function folderUser(
     "Files in this folder:",
     fileLines,
     "",
-    "Imported from outside:",
+    INBOUND_HEADING,
     inboundLines,
   ].join("\n");
 }

@@ -17,3 +17,19 @@ export async function createSupabaseClient(): Promise<SupabaseClient<Database>> 
     accessToken: async () => getToken(),
   });
 }
+
+// The agent has no Clerk session. Its bearer token is the access token, and
+// the publishable key is only the apikey header. The secret key is not used:
+// it would bypass row-level security.
+export function createSupabaseClientWithAccessToken(
+  accessToken: string,
+): SupabaseClient<Database> {
+  return createClient<Database>(env.supabaseUrl, env.supabasePublishableKey, {
+    accessToken: async () => accessToken,
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}

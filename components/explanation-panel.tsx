@@ -57,7 +57,7 @@ export function ExplanationPanel({
         <p className="px-3 py-2 text-[12px] text-muted">Nothing has explained this yet.</p>
       ) : null}
       {body !== null ? (
-        <ExplanationBody body={body} paths={paths} directories={directories} />
+        <RepositoryText body={body} paths={paths} directories={directories} />
       ) : null}
     </div>
   );
@@ -107,7 +107,7 @@ function staleCopy(fileChanged: boolean, commitMoved: boolean): string {
   return "This explanation is stale.";
 }
 
-function ExplanationBody({
+export function RepositoryText({
   body,
   paths,
   directories,

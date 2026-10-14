@@ -1,3 +1,5 @@
+import { signingKeyFromJwk } from "./analysis-jwt";
+
 // Loaded by next.config.ts, so a missing value stops `next dev`, `next build`
 // and `next start` before the first request rather than surfacing later as a
 // Clerk redirect to the wrong place or an anonymous Supabase client.
@@ -59,4 +61,13 @@ export const env = {
     "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   ),
+  // Private half of an ES256 key Supabase has imported. Used only to mint a
+  // short-lived token for one analysis. Not the secret API key.
+  analysisSigningJwk: requiredSigningJwk(process.env.ANALYSIS_SIGNING_JWK),
 } as const;
+
+function requiredSigningJwk(value: string | undefined): string {
+  const raw = required("ANALYSIS_SIGNING_JWK", value);
+  signingKeyFromJwk(raw);
+  return raw;
+}

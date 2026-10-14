@@ -1,4 +1,5 @@
 import "server-only";
+import { openAnalysisCredential } from "@/lib/analysis-credential";
 import { resolveRole } from "@/lib/categories";
 import { coverageOf, type Coverage } from "@/lib/coverage";
 import type { MapFile, MapLink } from "@/lib/map-scene";
@@ -8,7 +9,12 @@ import {
   type AnalysisStatus,
   type AnalysisSummary,
 } from "@/lib/progress";
-import { createSupabaseClient } from "@/lib/supabase";
+import {
+  createSupabaseClient,
+  createSupabaseClientWithAccessToken,
+} from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 export type { AnalysisStage, AnalysisStatus, AnalysisSummary };
 
@@ -66,13 +72,64 @@ type StoredAnalysis = AnalysisSummary & {
   labelingNote: string | null;
 };
 
-export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
-  const supabase = await createSupabaseClient();
+type LoadedAnalysis = StoredAnalysis & {
+  organizationId: string;
+};
 
+export type AnalysisSnapshotResult =
+  | { status: "ok"; graph: AnalysisGraph }
+  | { status: "rejected" }
+  | { status: "absent" };
+
+export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
+  const loaded = await loadStored(await createSupabaseClient(), id);
+  if (loaded === null) return null;
+  return storedAnalysis(loaded);
+}
+
+export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
+  const supabase = await createSupabaseClient();
+  const analysis = await loadStored(supabase, id);
+  if (analysis === null) {
+    throw new Error(`Analysis ${id} was not found`);
+  }
+  return assembleGraph(supabase, id, analysis.repository, analysis.framework);
+}
+
+// The credential is the only place the analysis id comes from. A missing or
+// rejected token is not a missing row: the caller answers 401 either way.
+export async function readAnalysisSnapshot(accessToken: string): Promise<AnalysisSnapshotResult> {
+  const credential = openAnalysisCredential(accessToken);
+  if (credential === null) return { status: "rejected" };
+
+  const supabase = createSupabaseClientWithAccessToken(accessToken);
+  try {
+    const analysis = await loadStored(supabase, credential.analysisId);
+    if (
+      analysis === null ||
+      analysis.organizationId !== credential.organizationId ||
+      analysis.status !== "complete"
+    ) {
+      return { status: "absent" };
+    }
+    return {
+      status: "ok",
+      graph: await assembleGraph(supabase, analysis.id, analysis.repository, analysis.framework),
+    };
+  } catch (error) {
+    if (credentialRejected(error)) return { status: "rejected" };
+    throw error;
+  }
+}
+
+async function loadStored(
+  supabase: SupabaseClient<Database>,
+  id: string,
+): Promise<LoadedAnalysis | null> {
   const { data, error } = await supabase
     .from("analyses")
     .select(
-      "id, status, stage, stage_message, commit_sha, failure_reason, framework, labeling_attempted, labeling_note, created_at, updated_at, project:projects!inner(repository)",
+      "id, organization_id, status, stage, stage_message, commit_sha, failure_reason, framework, labeling_attempted, labeling_note, created_at, updated_at, project:projects!inner(repository)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -95,17 +152,38 @@ export async function getAnalysis(id: string): Promise<StoredAnalysis | null> {
     labelingNote: data.labeling_note,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
+    organizationId: data.organization_id,
   };
 }
 
-export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
-  const supabase = await createSupabaseClient();
+function storedAnalysis(loaded: LoadedAnalysis): StoredAnalysis {
+  return {
+    id: loaded.id,
+    repository: loaded.repository,
+    status: loaded.status,
+    stage: loaded.stage,
+    stageMessage: loaded.stageMessage,
+    commitSha: loaded.commitSha,
+    failureReason: loaded.failureReason,
+    framework: loaded.framework,
+    labelingAttempted: loaded.labelingAttempted,
+    labelingNote: loaded.labelingNote,
+    createdAt: loaded.createdAt,
+    updatedAt: loaded.updatedAt,
+  };
+}
 
-  const analysis = await getAnalysis(id);
-  if (analysis === null) {
-    throw new Error(`Analysis ${id} was not found`);
-  }
+function credentialRejected(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /jwt|jws|signature|unauthorized|credential/i.test(error.message);
+}
 
+async function assembleGraph(
+  supabase: SupabaseClient<Database>,
+  id: string,
+  repository: string,
+  framework: string,
+): Promise<AnalysisGraph> {
   const { data: fileRows, error: filesError } = await supabase
     .from("files")
     .select("id, path, lines, skip_reason")
@@ -202,8 +280,8 @@ export async function getAnalysisGraph(id: string): Promise<AnalysisGraph> {
   );
 
   return {
-    repository: analysis.repository,
-    framework: analysis.framework,
+    repository,
+    framework,
     files,
     links,
     routes,
